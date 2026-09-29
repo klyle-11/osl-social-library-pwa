@@ -16,7 +16,8 @@
     "icons": "python3 scripts/make-icons.py",
     "test": "node --test",
     "check": "tsc",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "build:site": "npm run build && node scripts/build-site.js"
   },
   "repository": {
     "type": "git",

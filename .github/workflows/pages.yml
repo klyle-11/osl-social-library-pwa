@@ -26,13 +26,8 @@ jobs:
         with:
           node-version: 22
       - run: npm ci # replaces the committed node_modules with Linux builds
-      - run: npm run build
+      - run: npm run build:site
       - run: npm test
-      - name: Assemble site
-        run: |
-          mkdir site
-          cp -r index.html styles.css sw.js manifest.webmanifest icons dist site/
-          touch site/.nojekyll
       - name: Push to gh-pages
         run: |
           cd site
