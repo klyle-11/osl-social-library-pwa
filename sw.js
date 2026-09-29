@@ -6,13 +6,14 @@
 //   and picks up new versions the next time it's opened online.
 // - Media (./media/<sha256>): content addressed, so a cached copy never goes
 //   stale. Cache-first, network fallback.
-// - ./sync and every non-GET request: straight to the network, never cached.
+// - ./sync, ./status and every non-GET request: straight to the network, never cached.
 
 const SHELL_CACHE = "osl-shell-v1"; // bump to force a clean re-cache of the shell
 const MEDIA_CACHE = "osl-media"; // shared with src/db.js; kept across versions
 const SHELL = [
     "./",
     "./index.html",
+    "./styles.css",
     "./dist/app.js",
     "./manifest.webmanifest",
     "./icons/icon-192.png",
@@ -48,7 +49,7 @@ self.addEventListener("fetch", (event) => {
     const scope = new URL(self.registration.scope);
     const path = url.pathname.slice(scope.pathname.length);
 
-    if (path === "sync") return;
+    if (path === "sync" || path === "status") return;
 
     if (path.startsWith("media/")) {
         event.respondWith(

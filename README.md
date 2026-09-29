@@ -21,7 +21,10 @@ The design follows `docs/RR00_The_Whole_Route_Builders_Bridge.md` (gates 1–4).
 | `src/app.jsx` | Preact UI: library, add item, item + annotations, collections, device status |
 | `server.js` | The node: static files, `/sync`, `/media/<sha256>`, durable append-only op log. HTTP or HTTPS. No dependencies. |
 | `scripts/dev-cert.sh` | Local CA + certificate for testing on phones over Wi-Fi |
-| `test/` | Contract tests (`npm test`) |
+| `scripts/seed.js` | Seed content (items, files, a collection) for testing and the workshop |
+| `test/` | Contract and node tests (`npm test`) |
+| `TESTING.md` | Laptop check + the gate-five phone matrix, step by step |
+| `index.tsx`, `types.d.ts`, `data.json`, `styles.css`, `tsconfig.json` | The original annotation-project sketches, kept as they were. The app is built from `src/`. `styles.css` is linked but empty, so there's still no CSS. |
 
 ### Annotation types → operations
 
@@ -41,7 +44,10 @@ npm install
 npm run build          # bundles src/ → dist/app.js
 npm start              # http://localhost:8080 (localhost counts as secure, so offline works)
 npm test
+npm run seed           # optional: sample items + a "Welcome shelf" collection
 ```
+
+**To test on phones, follow [TESTING.md](TESTING.md).**
 
 `npm run watch` rebuilds when files change. Data is stored in `./data/` (`ops.jsonl` + `media/`).
 
@@ -53,12 +59,12 @@ Phones only allow service workers (offline mode) on **HTTPS**. There are two way
 
 ```sh
 npm run cert                 # certs/ca.pem, cert.pem, key.pem  (adds your LAN IPs)
-npm run start:https          # https://<your-LAN-IP>:8443
+npm run start:https          # https://<your-LAN-IP>:8443, and http://<LAN-IP>:8080/ca.pem for phones
 ```
 
-Trust `certs/ca.pem` on each test phone (once):
+Trust the CA on each test phone (once). Download it from `http://<LAN-IP>:8080/ca.pem`:
 
-- **iPhone/iPad:** AirDrop or email `certs/ca.pem` to the device → Settings → *Profile Downloaded* → Install →
+- **iPhone/iPad:** open that address in Safari → Settings → *Profile Downloaded* → Install →
   Settings → General → About → **Certificate Trust Settings** → turn on full trust for "OSL Dev CA".
 - **Android:** Settings → Security → Encryption & credentials → Install a certificate → **CA certificate** → pick `ca.pem`
   (Chrome trusts user-installed CAs).
@@ -98,7 +104,7 @@ Plan how you'll renew. Certificates last 90 days or less.
 - **Save / share collection file:** creates one `.osl.json` file and opens the share sheet (Save to Files, AirDrop, Nearby Share…).
 - **Import a collection file:** works fully offline. The ops it contains are also passed on to the node at the next sync.
 
-The **This device** tab shows HTTPS / service worker / install / persistent-storage status. Use it for the gate-five phone test.
+The **This device** tab has testing tools (Check the node, Send everything again, Copy test report) and shows HTTPS / service worker / install / persistent-storage status. Use it for the gate-five phone test.
 
 ## Notes
 

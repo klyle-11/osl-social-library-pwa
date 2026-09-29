@@ -10,11 +10,13 @@
     "build": "esbuild src/app.jsx --bundle --minify --sourcemap --format=esm --target=es2020,safari15 --jsx=automatic --jsx-import-source=preact --outfile=dist/app.js",
     "watch": "esbuild src/app.jsx --bundle --sourcemap --format=esm --target=es2020,safari15 --jsx=automatic --jsx-import-source=preact --outfile=dist/app.js --watch",
     "start": "node server.js",
-    "start:https": "TLS_CERT=certs/cert.pem TLS_KEY=certs/key.pem node server.js",
+    "start:https": "TLS_CERT=certs/cert.pem TLS_KEY=certs/key.pem HTTP_REDIRECT_PORT=8080 node server.js",
     "dev": "npm run build && node server.js",
     "cert": "sh scripts/dev-cert.sh",
     "icons": "python3 scripts/make-icons.py",
-    "test": "node --test"
+    "test": "node --test",
+    "check": "tsc",
+    "seed": "node scripts/seed.js"
   },
   "repository": {
     "type": "git",

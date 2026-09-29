@@ -116,6 +116,18 @@ export async function outboxOps() {
     return ops.filter(Boolean);
 }
 
+/** Testing aid (matrix case 8): put every op this device made back in the outbox, to resend it. */
+export async function requeueOwnOps() {
+    const me = await getDeviceId();
+    const db = await openDb();
+    const tx = db.transaction(["ops", "outbox"], "readwrite");
+    const ops = await result(tx.objectStore("ops").getAll());
+    const mine = ops.filter((op) => op.author === me);
+    for (const op of mine) tx.objectStore("outbox").put({ id: op.id });
+    await done(tx);
+    return mine.length;
+}
+
 export async function clearOutbox(ids) {
     const db = await openDb();
     const tx = db.transaction("outbox", "readwrite");

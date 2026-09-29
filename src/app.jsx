@@ -3,7 +3,7 @@
 import { render } from "preact";
 import { useState, useEffect, useCallback, useMemo } from "preact/hooks";
 import { itemsView, threadView, collectionsView, collectionOps, mediaHashes, ACCESS, MEDIUMS } from "./contract.js";
-import { addLocalOp, allOps, outboxOps, getDeviceId, getMeta, hashBlob, putMedia, hasMedia, mediaUrl, requestPersistence } from "./db.js";
+import { addLocalOp, requeueOwnOps, allOps, outboxOps, getDeviceId, getMeta, hashBlob, putMedia, hasMedia, mediaUrl, requestPersistence } from "./db.js";
 import { sync, fetchMedia } from "./sync.js";
 import { buildBundleFile, shareOrDownload, importBundleFile } from "./bundle.js";
 
@@ -108,10 +108,6 @@ function App() {
     return (
         <main>
             <header>
-                <h1>OSL — Offline Social Library</h1>
-                <p>
-                    <small>developed for Maroon's Motherboard project</small>
-                </p>
                 <nav>
                     <button onClick={() => setView({ name: "library" })}>Library</button>{" "}
                     <button onClick={() => setView({ name: "add" })}>Add item</button>{" "}
@@ -185,7 +181,7 @@ function Library({ ops, pending, setView }) {
     const [q, setQ] = useState("");
     const shown = items.filter((it) => {
         const p = it.properties;
-        return !q || [p.title, p.author, p.subtitle, p.type].join(" ").toLowerCase().includes(q.toLowerCase());
+        return !q || [p.title, p.author, p.subtitle, p.type, p.description].join(" ").toLowerCase().includes(q.toLowerCase());
     });
     return (
         <section>
@@ -253,6 +249,7 @@ function ItemView({ ops, pending, me, act, itemId, setView }) {
             </p>
             <h2>{p.title}</h2>
             {p.subtitle && <h3>{p.subtitle}</h3>}
+            {p.description && <p>{p.description}</p>}
             <dl>
                 <dt>Author</dt>
                 <dd>{p.author || "—"}</dd>
@@ -367,6 +364,7 @@ function AddItem({ act, setView, setStatus }) {
                     const properties = {
                         title: String(f.get("title")).trim(),
                         subtitle: String(f.get("subtitle") || "").trim() || undefined,
+                        description: String(f.get("description") || "").trim() || undefined,
                         author: String(f.get("author") || "").trim(),
                         type: String(f.get("medium") || ""),
                     };
@@ -394,6 +392,13 @@ function AddItem({ act, setView, setStatus }) {
                 <p>
                     <label>
                         Subtitle <input name="subtitle" />
+                    </label>
+                </p>
+                <p>
+                    <label>
+                        Description
+                        <br />
+                        <textarea name="description" rows={3} cols={40} />
                     </label>
                 </p>
                 <p>
@@ -529,8 +534,35 @@ function Collections({ ops, me, setStatus, reload, setView }) {
     );
 }
 
-function Device({ me, ops, pending, lastSync, persisted, online }) {
+function Device({ me, ops, pending, lastSync, persisted, online, reload, setStatus }) {
     const [usage, setUsage] = useState("");
+    const [node, setNode] = useState(null);
+
+    async function checkNode() {
+        try {
+            const res = await fetch(new URL("status", document.baseURI), { cache: "no-store" });
+            setNode(await res.json());
+        } catch {
+            setNode({ error: "node not reachable" });
+        }
+    }
+
+    function report() {
+        return [
+            `OSL test report ${new Date().toISOString()}`,
+            `device: ${me}`,
+            `browser: ${navigator.userAgent}`,
+            `installed: ${isStandalone()}`,
+            `secure context: ${window.isSecureContext}`,
+            `service worker: ${!!(navigator.serviceWorker && navigator.serviceWorker.controller)}`,
+            `persistent storage: ${persisted}`,
+            `storage: ${usage}`,
+            `online: ${online}`,
+            `ops on device: ${ops.length}, mine: ${ops.filter((op) => op.author === me).length}, waiting: ${pending.size}`,
+            `last sync: ${lastSync || "never"}`,
+            node ? `node: ${JSON.stringify({ ops: node.ops, uniqueIds: node.uniqueIds, devices: node.devices, media: node.media, error: node.error })}` : "node: not checked",
+        ].join("\n");
+    }
     useEffect(() => {
         navigator.storage &&
             navigator.storage.estimate &&
@@ -561,6 +593,47 @@ function Device({ me, ops, pending, lastSync, persisted, online }) {
                 <dt>Storage</dt>
                 <dd>{usage || "unknown"}</dd>
             </dl>
+
+            <h3>Testing</h3>
+            <p>
+                <button onClick={checkNode}>Check the node</button>{" "}
+                {node &&
+                    (node.error ? (
+                        node.error
+                    ) : (
+                        <span>
+                            node holds {node.ops} ops ({node.uniqueIds} unique) from {node.devices} device(s), {node.media} file(s)
+                            {node.ops === node.uniqueIds ? " — no duplicates" : " — DUPLICATES FOUND"}
+                        </span>
+                    ))}
+            </p>
+            <p>
+                <button
+                    onClick={async () => {
+                        const n = await requeueOwnOps();
+                        await reload();
+                        setStatus(`${n} operation(s) queued to send again. Sync, then Check the node: the count must not grow.`);
+                    }}
+                >
+                    Send everything again
+                </button>{" "}
+                <small>(checks that repeats make no duplicates)</small>
+            </p>
+            <p>
+                <button
+                    onClick={async () => {
+                        const text = report();
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            setStatus("Test report copied.");
+                        } catch {
+                            prompt("Copy this test report:", text);
+                        }
+                    }}
+                >
+                    Copy test report
+                </button>
+            </p>
         </section>
     );
 }

@@ -5,7 +5,8 @@
 //   HTTPS (phones on the LAN / the archive Pi):   TLS_CERT=certs/cert.pem TLS_KEY=certs/key.pem node server.js
 //
 // Env: PORT (8080 http / 8443 https), HOST (0.0.0.0), DATA_DIR (./data),
-//      TLS_CERT, TLS_KEY, HTTP_REDIRECT_PORT (optional: also listen on http and redirect to https)
+//      TLS_CERT, TLS_KEY, HTTP_REDIRECT_PORT (optional: also listen on plain http; it serves the
+//      dev CA at /ca.pem for installing on test phones, and redirects everything else to https)
 
 import http from "node:http";
 import https from "node:https";
@@ -13,6 +14,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { validateOp } from "./src/contract.js";
 
@@ -26,9 +28,10 @@ const HOST = process.env.HOST || "0.0.0.0";
 const MAX_BODY = 50 * 1024 * 1024;
 
 // Only these are served as static files; everything else in the repo stays private.
-const PUBLIC = new Set(["index.html", "sw.js", "manifest.webmanifest", "dist/app.js", "dist/app.js.map"]);
+const PUBLIC = new Set(["index.html", "styles.css", "sw.js", "manifest.webmanifest", "dist/app.js", "dist/app.js.map"]);
 const TYPES = {
     ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".map": "application/json",
     ".webmanifest": "application/manifest+json",
@@ -147,6 +150,21 @@ async function handleMedia(req, res, hash) {
     send(res, 405, "method not allowed");
 }
 
+/** For testing: what the node holds. "ops" should equal "uniqueIds" - each op stored exactly once. */
+function status() {
+    const authors = new Set(log.map((e) => e.op.author));
+    const byType = {};
+    for (const e of log) byType[e.op.type] = (byType[e.op.type] || 0) + 1;
+    return {
+        ops: log.length,
+        uniqueIds: new Set(log.map((e) => e.op.id)).size,
+        devices: authors.size,
+        byType,
+        media: fs.readdirSync(MEDIA_DIR).filter((f) => HASH_RE.test(f)).length,
+        latest: log.slice(-10).map((e) => ({ seq: e.seq, id: e.op.id, type: e.op.type, created: e.op.created })),
+    };
+}
+
 async function serveStatic(req, res, rel) {
     if (rel === "" || rel.endsWith("/")) rel += "index.html";
     if (!PUBLIC.has(rel) && !/^icons\/[\w-]+\.png$/.test(rel)) {
@@ -179,6 +197,7 @@ async function handler(req, res) {
             return await handleSync(req, res);
         }
         if (rel.startsWith("media/")) return await handleMedia(req, res, rel.slice(6));
+        if (rel === "status") return send(res, 200, status());
         if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed");
         return await serveStatic(req, res, rel);
     } catch (e) {
@@ -187,23 +206,45 @@ async function handler(req, res) {
     }
 }
 
+function lanUrls(scheme, port) {
+    const ips = Object.values(os.networkInterfaces())
+        .flat()
+        .filter((a) => a && a.family === "IPv4" && !a.internal)
+        .map((a) => a.address);
+    const suffix = (scheme === "https" && port === 443) || (scheme === "http" && port === 80) ? "" : ":" + port;
+    return ["localhost", ...ips].map((h) => `  ${scheme}://${h}${suffix}/`).join("\n");
+}
+
+// Serves the dev CA over plain http so a test phone can install it before it trusts https.
+const CA_FILE = process.env.CA_FILE || path.join(ROOT, "certs", "ca.pem");
+function httpHelper(req, res) {
+    const rel = new URL(req.url, "http://x").pathname;
+    if ((rel === "/ca.pem" || rel === "/ca.crt") && fs.existsSync(CA_FILE)) {
+        res.writeHead(200, {
+            "Content-Type": "application/x-x509-ca-cert",
+            "Content-Disposition": 'attachment; filename="osl-dev-ca.crt"',
+        });
+        return res.end(fs.readFileSync(CA_FILE));
+    }
+    const host = (req.headers.host || "").replace(/:\d+$/, "");
+    res.writeHead(301, { Location: `https://${host}${PORT === 443 ? "" : ":" + PORT}${req.url}` });
+    res.end();
+}
+
 if (TLS) {
     https
         .createServer({ cert: fs.readFileSync(process.env.TLS_CERT), key: fs.readFileSync(process.env.TLS_KEY) }, handler)
-        .listen(PORT, HOST, () => console.log(`OSL node on https://${HOST}:${PORT}`));
+        .listen(PORT, HOST, () => console.log(`OSL node on\n${lanUrls("https", PORT)}`));
     const redirect = process.env.HTTP_REDIRECT_PORT;
     if (redirect) {
-        http
-            .createServer((req, res) => {
-                const host = (req.headers.host || "").replace(/:\d+$/, "");
-                res.writeHead(301, { Location: `https://${host}${PORT === 443 ? "" : ":" + PORT}${req.url}` });
-                res.end();
-            })
-            .listen(Number(redirect), HOST, () => console.log(`Redirecting http://${HOST}:${redirect} -> https`));
+        http.createServer(httpHelper).listen(Number(redirect), HOST, () => {
+            console.log(`Plain http on port ${redirect} redirects to https.`);
+            if (fs.existsSync(CA_FILE)) console.log(`Test phones can install the dev CA from http://<LAN-IP>:${redirect}/ca.pem`);
+        });
     }
 } else {
     http.createServer(handler).listen(PORT, HOST, () => {
-        console.log(`OSL node on http://localhost:${PORT}`);
+        console.log(`OSL node on\n${lanUrls("http", PORT)}`);
         console.log("Plain HTTP: offline mode only works on localhost. Set TLS_CERT/TLS_KEY for phones.");
     });
 }
