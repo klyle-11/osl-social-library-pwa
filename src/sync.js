@@ -49,6 +49,7 @@ async function doSync() {
         body: JSON.stringify({ ops: pending, since: cursor }),
         cache: "no-store",
     });
+    if ([404, 405, 501].includes(res.status)) throw Object.assign(new Error("no node"), { noNode: true });
     if (!res.ok) throw new Error(`sync ${res.status}`);
     /** @type {{acked: string[], ops: any[], cursor: number}} */
     const reply = await res.json();

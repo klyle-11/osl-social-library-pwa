@@ -77,7 +77,11 @@ function App() {
             setStatus(`Synced: sent ${r.sent}, received ${r.received}.`);
         } catch (e) {
             console.warn("sync failed", e);
-            setStatus("Not synced (node not reachable). Everything is kept on this device.");
+            setStatus(
+                e && e.noNode
+                    ? "No archive node at this address (demo mode). Everything is kept on this device."
+                    : "Not synced (node not reachable). Everything is kept on this device.",
+            );
         }
         lib.reload();
     }, [lib.reload]);

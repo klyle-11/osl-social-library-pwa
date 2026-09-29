@@ -1,0 +1,44 @@
+# Builds the app and publishes it to the gh-pages branch, so GitHub Pages
+# serves it over HTTPS (installable + offline on iPhone and Android).
+# One-time setup: Settings -> Pages -> Source: Deploy from a branch -> gh-pages / (root).
+# Pages is static: there is no archive node there, so the app runs in demo mode
+# (everything stays on the device).
+name: Publish to GitHub Pages
+
+on:
+  push:
+    branches: [pwa-preact-offline]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci # replaces the committed node_modules with Linux builds
+      - run: npm run build
+      - run: npm test
+      - name: Assemble site
+        run: |
+          mkdir site
+          cp -r index.html styles.css sw.js manifest.webmanifest icons dist site/
+          touch site/.nojekyll
+      - name: Push to gh-pages
+        run: |
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
