@@ -1,15 +1,20 @@
 {
   "name": "osl-social-library-pwa",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "OSL - Offline Social Library: a Preact PWA that works offline on iOS and Android",
+  "main": "server.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
-    "dev": "esbuild index.tsx --bundle --outfile=dist/app.js --servedir=. --watch",
-    "build": "esbuild index.tsx --bundle --minify --outfile=dist/app.js",
-    "check": "tsc"
+    "build": "esbuild src/app.jsx --bundle --minify --sourcemap --format=esm --target=es2020,safari15 --jsx=automatic --jsx-import-source=preact --outfile=dist/app.js",
+    "watch": "esbuild src/app.jsx --bundle --sourcemap --format=esm --target=es2020,safari15 --jsx=automatic --jsx-import-source=preact --outfile=dist/app.js --watch",
+    "start": "node server.js",
+    "start:https": "TLS_CERT=certs/cert.pem TLS_KEY=certs/key.pem node server.js",
+    "dev": "npm run build && node server.js",
+    "cert": "sh scripts/dev-cert.sh",
+    "icons": "python3 scripts/make-icons.py",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
@@ -18,7 +23,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/klyle-11/osl-social-library-pwa/issues"
   },
