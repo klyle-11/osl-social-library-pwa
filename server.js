@@ -28,7 +28,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const MAX_BODY = 50 * 1024 * 1024;
 
 // Only these are served as static files; everything else in the repo stays private.
-const PUBLIC = new Set(["index.html", "styles.css", "sw.js", "manifest.webmanifest", "dist/app.js", "dist/app.js.map"]);
+const PUBLIC = new Set(["index.html", "styles.css", "sw.js", "manifest.webmanifest", "dist/app.js", "dist/app.js.map", "dist/library.json"]);
 const TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -36,7 +36,12 @@ const TYPES = {
     ".map": "application/json",
     ".webmanifest": "application/manifest+json",
     ".png": "image/png",
+    ".woff2": "font/woff2",
     ".json": "application/json",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".pdf": "application/pdf",
+    ".epub": "application/epub+zip",
 };
 
 // ---- op log: append-only JSONL, one line per op, fsync before ack ----
@@ -167,7 +172,7 @@ function status() {
 
 async function serveStatic(req, res, rel) {
     if (rel === "" || rel.endsWith("/")) rel += "index.html";
-    if (!PUBLIC.has(rel) && !/^icons\/[\w-]+\.png$/.test(rel)) {
+    if (!PUBLIC.has(rel) && !/^icons\/[\w-]+\.png$/.test(rel) && !/^library\/files\/[^/]+$/.test(rel) && !/^fonts\/[\w-]+\.woff2$/.test(rel)) {
         // unknown paths are app routes: hand back the shell
         if (!path.extname(rel)) rel = "index.html";
         else return send(res, 404, "not found");

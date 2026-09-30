@@ -3,7 +3,7 @@
 // to the foreground. iOS never runs web apps in the background, so the
 // outbox just waits until the next time the app is open.
 
-import { outboxOps, clearOutbox, putRemoteOps, getMeta, setMeta, getMedia, putMedia } from "./db.js";
+import { outboxOps, clearOutbox, putRemoteOps, getMeta, setMeta, getMedia, putMedia, hasMedia } from "./db.js";
 import { mediaHashes, validateOp } from "./contract.js";
 
 const SYNC_URL = new URL("sync", document.baseURI).href;
@@ -71,4 +71,23 @@ export async function fetchMedia(hashes, onProgress) {
         if (!res.ok) continue;
         await putMedia(hash, await res.blob(), res.headers.get("Content-Type"));
     }
+}
+
+/**
+ * Load the steward's library (dist/library.json, built from library/documents.json)
+ * and cache its files for offline reading. Runs on every launch; ids already on the
+ * device are left alone, so it only adds what's new. Works with or without a node.
+ */
+export async function loadLibrary() {
+    const res = await fetch(new URL("dist/library.json", document.baseURI));
+    if (!res.ok) return 0;
+    /** @type {{ops: any[], files: Record<string, {path: string, type: string}>}} */
+    const lib = await res.json();
+    await putRemoteOps(lib.ops.filter((op) => !validateOp(op)));
+    for (const [hash, f] of Object.entries(lib.files)) {
+        if (await hasMedia(hash)) continue;
+        const file = await fetch(new URL(f.path, document.baseURI));
+        if (file.ok) await putMedia(hash, await file.blob(), f.type);
+    }
+    return lib.ops.length;
 }

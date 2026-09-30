@@ -8,18 +8,21 @@
 //   stale. Cache-first, network fallback.
 // - ./sync, ./status and every non-GET request: straight to the network, never cached.
 
-const SHELL_CACHE = "osl-shell-v1"; // bump to force a clean re-cache of the shell
+const SHELL_CACHE = "osl-shell-v2"; // bump to force a clean re-cache of the shell
 const MEDIA_CACHE = "osl-media"; // shared with src/db.js; kept across versions
 const SHELL = [
     "./",
     "./index.html",
     "./styles.css",
     "./dist/app.js",
+    "./dist/library.json",
     "./manifest.webmanifest",
     "./icons/icon-192.png",
     "./icons/icon-512.png",
     "./icons/icon-maskable-512.png",
     "./icons/apple-touch-icon.png",
+    "./fonts/enriqueta-400.woff2",
+    "./fonts/enriqueta-700.woff2",
 ];
 
 self.addEventListener("install", (event) => {

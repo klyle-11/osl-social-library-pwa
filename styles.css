@@ -1,0 +1,150 @@
+/* Themes. With no data-theme on <html> the app stays plain HTML (browser defaults).
+   The toggle in the header sets <html data-theme="monoskop|dark">. */
+
+/* ---- Monoskop: after monoskop.org's wiki skin ---- */
+
+@font-face {
+    font-family: "Enriqueta";
+    src: url(fonts/enriqueta-400.woff2) format("woff2");
+    font-weight: 400;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Enriqueta";
+    src: url(fonts/enriqueta-700.woff2) format("woff2");
+    font-weight: 700;
+    font-display: swap;
+}
+
+[data-theme="monoskop"] {
+    --ink: #000;
+    --link: darkgreen;
+    --external: #36b;
+    --rule: #bbb;
+    --muted: #666;
+    --panel: #f8f9fa;
+    --field: #aaa;
+    --serif-slab: "Enriqueta", Geneva, "Lucida Grande", serif;
+    color-scheme: light;
+    font-size: 1em;
+    background: #fff;
+}
+@media (min-width: 1025px) {
+    [data-theme="monoskop"] { font-size: 1.25em; }
+}
+
+[data-theme="monoskop"] body {
+    /* Monoskop sets Fedra Sans (not freely licensed); these are the nearest humanist sans on each platform */
+    font-family: "Fedra Sans Pro", "Gill Sans", "Gill Sans MT", Seravek, Calibri, "Trebuchet MS", sans-serif;
+    font-weight: 300;
+    line-height: 1.5;
+    color: var(--ink);
+    background: #fff;
+    width: 85%;
+    max-width: 1500px;
+    margin: 1em auto 3em;
+}
+@media (max-width: 720px) {
+    [data-theme="monoskop"] body { width: auto; margin: 0.75em 16px 3em; }
+}
+
+[data-theme="monoskop"] b,
+[data-theme="monoskop"] strong,
+[data-theme="monoskop"] dt,
+[data-theme="monoskop"] th { font-weight: 500; }
+
+[data-theme="monoskop"] h1,
+[data-theme="monoskop"] h2,
+[data-theme="monoskop"] h3,
+[data-theme="monoskop"] h4 {
+    font-family: var(--serif-slab);
+    font-weight: 400;
+    margin: 1.2em 0 0.4em;
+    border-bottom: 1px dotted var(--rule);
+}
+/* the page title ("OSL") is Monoskop's firstHeading: big, solid black rule */
+[data-theme="monoskop"] body > h2:first-child {
+    font-size: 1.6em;
+    margin-top: 0;
+    border-bottom: 1px solid var(--ink);
+}
+[data-theme="monoskop"] body > h4 {
+    border: 0;
+    margin: 0.2em 0 1em;
+    font-family: inherit;
+    font-weight: 300;
+    color: var(--muted);
+}
+[data-theme="monoskop"] h2 { font-size: 1.3em; }
+[data-theme="monoskop"] h3 { font-size: 1.1em; }
+
+[data-theme="monoskop"] a,
+[data-theme="monoskop"] a:visited { color: var(--link); text-decoration: none; }
+[data-theme="monoskop"] a:hover { text-decoration: underline; }
+[data-theme="monoskop"] a[target="_blank"] { color: var(--external); }
+
+[data-theme="monoskop"] hr { border: 0; border-top: 1px solid var(--rule); margin: 0.5em 0 1em; }
+[data-theme="monoskop"] small { color: var(--muted); }
+[data-theme="monoskop"] i { font-style: italic; }
+
+/* the nav reads like the wiki's sidebar links */
+[data-theme="monoskop"] nav { display: flex; flex-wrap: wrap; gap: 0.25em 1.2em; }
+[data-theme="monoskop"] nav button {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--link);
+    font: inherit;
+    cursor: pointer;
+}
+[data-theme="monoskop"] nav button:hover { text-decoration: underline; }
+
+[data-theme="monoskop"] button,
+[data-theme="monoskop"] input,
+[data-theme="monoskop"] select,
+[data-theme="monoskop"] textarea {
+    font: inherit;
+    font-size: 0.9em;
+    color: var(--ink);
+    background: #fff;
+    border: 1px solid var(--field);
+    border-radius: 0.3em;
+    padding: 0.2em 0.5em;
+}
+[data-theme="monoskop"] button { cursor: pointer; background: var(--panel); }
+[data-theme="monoskop"] button:hover:not(:disabled) { border-color: var(--ink); }
+[data-theme="monoskop"] button:disabled { color: var(--muted); cursor: default; }
+[data-theme="monoskop"] textarea,
+[data-theme="monoskop"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { max-width: 100%; box-sizing: border-box; }
+
+[data-theme="monoskop"] ul,
+[data-theme="monoskop"] ol { padding-left: 1.2em; }
+[data-theme="monoskop"] li { margin: 0.2em 0; }
+
+/* metadata block: Monoskop's grey TOC panel */
+[data-theme="monoskop"] dl {
+    background: var(--panel);
+    border-radius: 0.3em;
+    padding: 0.5em 0.8em;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.2em 1em;
+}
+[data-theme="monoskop"] dd { margin: 0; }
+
+[data-theme="monoskop"] article {
+    border-bottom: 1px dotted var(--rule);
+    padding: 0.4em 0;
+}
+
+/* ---- Dark: the original plain version, just dark ---- */
+
+[data-theme="dark"] {
+    color-scheme: dark;
+    background-color: #1d163e;
+}
+[data-theme="dark"] body {
+    background-color: #1d163e;
+    color: #fffffc;
+}
+[data-theme="dark"] a { color: inherit; }

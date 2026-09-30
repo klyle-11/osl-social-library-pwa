@@ -4,7 +4,7 @@ import { render } from "preact";
 import { useState, useEffect, useCallback, useMemo } from "preact/hooks";
 import { itemsView, threadView, collectionsView, collectionOps, mediaHashes, ACCESS, MEDIUMS } from "./contract.js";
 import { addLocalOp, requeueOwnOps, allOps, outboxOps, getDeviceId, getMeta, hashBlob, putMedia, hasMedia, mediaUrl, requestPersistence } from "./db.js";
-import { sync, fetchMedia } from "./sync.js";
+import { sync, fetchMedia, loadLibrary } from "./sync.js";
 import { buildBundleFile, shareOrDownload, importBundleFile } from "./bundle.js";
 
 // ---- service worker + install ----
@@ -61,6 +61,44 @@ function useOnline() {
     return online;
 }
 
+// ---- theme ----
+
+const THEMES = [
+    ["", "Plain"],
+    ["monoskop", "Monoskop"],
+    ["dark", "Dark"],
+];
+const THEME_COLORS = { "": "#ffffff", monoskop: "#ffffff", dark: "#1d163e" };
+
+function applyTheme(theme) {
+    if (theme) document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLORS[theme] || "#ffffff");
+    try {
+        if (theme) localStorage.setItem("osl-theme", theme);
+        else localStorage.removeItem("osl-theme");
+    } catch {
+        // private mode: the theme just won't be remembered
+    }
+}
+
+function ThemePicker() {
+    const [theme, setTheme] = useState(document.documentElement.dataset.theme || "");
+    useEffect(() => applyTheme(theme), [theme]);
+    return (
+        <label>
+            Theme{" "}
+            <select value={theme} onChange={(e) => setTheme(e.currentTarget.value)}>
+                {THEMES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                        {label}
+                    </option>
+                ))}
+            </select>
+        </label>
+    );
+}
+
 // ---- components ----
 
 function App() {
@@ -88,6 +126,9 @@ function App() {
 
     useEffect(() => {
         requestPersistence().then(setPersisted);
+        loadLibrary()
+            .catch((e) => console.warn("library load failed", e))
+            .then(lib.reload);
         runSync();
         const onVisible = () => document.visibilityState === "visible" && runSync();
         addEventListener("online", runSync);
@@ -116,7 +157,8 @@ function App() {
                     <button onClick={() => setView({ name: "library" })}>Library</button>{" "}
                     <button onClick={() => setView({ name: "add" })}>Add item</button>{" "}
                     <button onClick={() => setView({ name: "collections" })}>Collections</button>{" "}
-                    <button onClick={() => setView({ name: "device" })}>This device</button>
+                    <button onClick={() => setView({ name: "device" })}>This device</button>{" "}
+                    <ThemePicker />
                 </nav>
                 <p>
                     {online ? "Online" : "Offline"} · {lib.pending.size} waiting to send ·{" "}
@@ -177,6 +219,7 @@ function InstallHint() {
 }
 
 function Pending({ pending, id }) {
+    if (id.startsWith("steward")) return <small> (from the library)</small>;
     return <small>{pending.has(id) ? " (waiting to send)" : " (saved at the archive)"}</small>;
 }
 
@@ -259,6 +302,12 @@ function ItemView({ ops, pending, me, act, itemId, setView }) {
                 <dd>{p.author || "—"}</dd>
                 <dt>Medium</dt>
                 <dd>{p.type || "—"}</dd>
+                {p.year && (
+                    <>
+                        <dt>Year</dt>
+                        <dd>{p.year}</dd>
+                    </>
+                )}
                 <dt>Added by</dt>
                 <dd>
                     {item.author} on {new Date(item.created).toLocaleString()}

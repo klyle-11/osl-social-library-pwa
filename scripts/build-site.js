@@ -2,7 +2,7 @@
 // (Vercel, GitHub Pages). Run after `npm run build`.
 import fs from "node:fs";
 
-const files = ["index.html", "styles.css", "sw.js", "manifest.webmanifest", "icons", "dist"];
+const files = ["index.html", "styles.css", "sw.js", "manifest.webmanifest", "icons", "dist", "library/files", "fonts"];
 fs.rmSync("site", { recursive: true, force: true });
 fs.mkdirSync("site");
 for (const f of files) fs.cpSync(f, "site/" + f, { recursive: true });
