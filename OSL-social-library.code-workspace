@@ -8,6 +8,12 @@
 		},
 		{
 			"path": "../osl-social-library-pwa-fastroute"
+		},
+		{
+			"path": "../../../../Volumes/bootfs"
+		},
+		{
+			"path": "../disk-maintenance"
 		}
 	],
 	"settings": {}
