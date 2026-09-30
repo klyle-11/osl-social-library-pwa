@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+        <title>Offline social library</title>
+        <link rel="stylesheet" href="styles.css">
+        <script>
+            // Apply the saved theme before first paint (set by the Theme picker in the app).
+            try {
+                var t = localStorage.getItem("osl-theme");
+                if (t) document.documentElement.dataset.theme = t;
+            } catch (e) {}
+        </script>
+
+        <!-- PWA: Android / Chrome -->
+        <link rel="manifest" href="manifest.webmanifest">
+        <meta name="theme-color" content="#ffffff">
+        <meta name="mobile-web-app-capable" content="yes">
+
+        <!-- PWA: iOS / Safari (Add to Home Screen) -->
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-title" content="OSL">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+        <link rel="icon" type="image/png" href="icons/icon-192.png">
+    </head>
+    <body>
+        <h2>OSL</h2>
+        <h4><i>developed for Maroon's Motherboard project</i></h4>
+        <div id="app">
+            <p>Loading…</p>
+            <noscript>OSL needs JavaScript.</noscript>
+        </div>
+        <script type="module" src="dist/app.js"></script>
+
+    </body>
+</html>
