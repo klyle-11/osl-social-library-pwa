@@ -2,3 +2,6 @@ dist/
 data/
 certs/
 site/
+firmware/.pio/
+firmware/data/
+firmware/test/.deps/

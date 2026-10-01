@@ -27,14 +27,19 @@ const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.
 
 function useLibrary() {
     const [ops, setOps] = useState([]);
-    const [pending, setPending] = useState(new Set());
+    const [pending, setPending] = useState(new Map());
+    const [waiting, setWaiting] = useState(0);
     const [me, setMe] = useState("");
     const [lastSync, setLastSync] = useState(null);
 
     const reload = useCallback(async () => {
-        const [all, out, id, last] = await Promise.all([allOps(), outboxOps(), getDeviceId(), getMeta("lastSync")]);
+        const [all, out, id, last, relay] = await Promise.all([allOps(), outboxOps(), getDeviceId(), getMeta("lastSync"), getMeta("atDropPoint")]);
         setOps(all);
-        setPending(new Set(out.map((op) => op.id)));
+        // Merged into one map so every <Pending> keeps working: id -> "outbox" | "drop"
+        const state = new Map((relay || []).map((i) => [i, "drop"]));
+        for (const op of out) state.set(op.id, "outbox");
+        setPending(state);
+        setWaiting(out.length);
         setMe(id);
         setLastSync(last);
     }, []);
@@ -43,7 +48,7 @@ function useLibrary() {
         reload();
     }, [reload]);
 
-    return { ops, pending, me, lastSync, reload };
+    return { ops, pending, waiting, me, lastSync, reload };
 }
 
 function useOnline() {
@@ -74,7 +79,11 @@ function App() {
         try {
             setStatus("Syncing…");
             const r = await sync();
-            setStatus(`Synced: sent ${r.sent}, received ${r.received}.`);
+            const where = r.node && r.node.startsWith("drop-") ? "drop point" : "archive";
+            setStatus(
+                `Synced with the ${where}: sent ${r.sent}, received ${r.received}.` +
+                    (r.mediaWaiting ? ` ${r.mediaWaiting} file(s) will upload at the archive.` : ""),
+            );
         } catch (e) {
             console.warn("sync failed", e);
             setStatus(
@@ -119,7 +128,7 @@ function App() {
                     <button onClick={() => setView({ name: "device" })}>This device</button>
                 </nav>
                 <p>
-                    {online ? "Online" : "Offline"} · {lib.pending.size} waiting to send ·{" "}
+                    {online ? "Online" : "Offline"} · {lib.waiting} waiting to send ·{" "}
                     <button onClick={runSync} disabled={!online}>
                         Sync now
                     </button>
@@ -177,7 +186,8 @@ function InstallHint() {
 }
 
 function Pending({ pending, id }) {
-    return <small>{pending.has(id) ? " (waiting to send)" : " (saved at the archive)"}</small>;
+    const s = pending.get(id);
+    return <small>{s === "outbox" ? " (waiting to send)" : s === "drop" ? " (at the drop point, on its way to the archive)" : " (saved at the archive)"}</small>;
 }
 
 function Library({ ops, pending, setView }) {
@@ -538,7 +548,7 @@ function Collections({ ops, me, setStatus, reload, setView }) {
     );
 }
 
-function Device({ me, ops, pending, lastSync, persisted, online, reload, setStatus }) {
+function Device({ me, ops, waiting, lastSync, persisted, online, reload, setStatus }) {
     const [usage, setUsage] = useState("");
     const [node, setNode] = useState(null);
 
@@ -562,9 +572,9 @@ function Device({ me, ops, pending, lastSync, persisted, online, reload, setStat
             `persistent storage: ${persisted}`,
             `storage: ${usage}`,
             `online: ${online}`,
-            `ops on device: ${ops.length}, mine: ${ops.filter((op) => op.author === me).length}, waiting: ${pending.size}`,
+            `ops on device: ${ops.length}, mine: ${ops.filter((op) => op.author === me).length}, waiting: ${waiting}`,
             `last sync: ${lastSync || "never"}`,
-            node ? `node: ${JSON.stringify({ ops: node.ops, uniqueIds: node.uniqueIds, devices: node.devices, media: node.media, error: node.error })}` : "node: not checked",
+            node ? `node: ${JSON.stringify(node)}` : "node: not checked",
         ].join("\n");
     }
     useEffect(() => {
@@ -581,7 +591,7 @@ function Device({ me, ops, pending, lastSync, persisted, online, reload, setStat
                 <dt>Operations stored</dt>
                 <dd>{ops.length}</dd>
                 <dt>Waiting to send</dt>
-                <dd>{pending.size}</dd>
+                <dd>{waiting}</dd>
                 <dt>Last sync</dt>
                 <dd>{lastSync ? new Date(lastSync).toLocaleString() : "never"}</dd>
                 <dt>Network</dt>
@@ -604,6 +614,11 @@ function Device({ me, ops, pending, lastSync, persisted, online, reload, setStat
                 {node &&
                     (node.error ? (
                         node.error
+                    ) : node.role === "droppoint" ? (
+                        <span>
+                            drop point {node.node}: {node.fromPhones} op(s) handed in here, {node.waitingToForward} waiting to cross
+                            the radio, {node.fromArchive} received from the archive
+                        </span>
                     ) : (
                         <span>
                             node holds {node.ops} ops ({node.uniqueIds} unique) from {node.devices} device(s), {node.media} file(s)

@@ -55,6 +55,16 @@ test("sync, idempotency, durability", async () => {
     assert.equal(s.devices, 2);
 });
 
+test("one cursor per node", async () => {
+    const s = await (await fetch(base + "status")).json();
+    assert.match(s.node, /^archive-[0-9a-f]{6}$/);
+    let r = await (await fetch(base + "sync", { method: "POST", body: JSON.stringify({ ops: [], cursors: { [s.node]: 2, "drop-abc": 9 } }) })).json();
+    assert.equal(r.node, s.node);
+    assert.deepEqual(r.ops.map((o) => o.id), ["B:1"]);
+    r = await (await fetch(base + "sync", { method: "POST", body: JSON.stringify({ ops: [], cursors: { "drop-abc": 9 } }) })).json();
+    assert.equal(r.ops.length, 3); // no cursor for this node yet: everything
+});
+
 test("media is content addressed", async () => {
     const hash = "sha256-2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"; // "hello"
     let res = await fetch(base + "media/" + hash, { method: "PUT", body: "hello!" });

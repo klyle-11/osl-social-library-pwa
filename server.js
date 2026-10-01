@@ -5,6 +5,7 @@
 //   HTTPS (phones on the LAN / the archive Pi):   TLS_CERT=certs/cert.pem TLS_KEY=certs/key.pem node server.js
 //
 // Env: PORT (8080 http / 8443 https), HOST (0.0.0.0), DATA_DIR (./data),
+//      RADIO_PORT (optional: serial device of the LoRa modem, e.g. /dev/ttyACM0; see firmware/README.md)
 //      TLS_CERT, TLS_KEY, HTTP_REDIRECT_PORT (optional: also listen on plain http; it serves the
 //      dev CA at /ca.pem for installing on test phones, and redirects everything else to https)
 
@@ -42,6 +43,12 @@ const TYPES = {
 // ---- op log: append-only JSONL, one line per op, fsync before ack ----
 
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
+
+// Each node (this archive, every drop point) has its own sequence numbers, so phones
+// keep one cursor per node id.
+const NODE_ID_FILE = path.join(DATA_DIR, "node-id");
+if (!fs.existsSync(NODE_ID_FILE)) fs.writeFileSync(NODE_ID_FILE, "archive-" + crypto.randomBytes(3).toString("hex"));
+const NODE_ID = fs.readFileSync(NODE_ID_FILE, "utf8").trim();
 /** @type {{seq: number, op: any}[]} */
 const log = [];
 const seen = new Set();
@@ -113,8 +120,10 @@ async function handleSync(req, res) {
     const incoming = Array.isArray(body.ops) ? body.ops : [];
     const valid = incoming.filter((op) => !validateOp(op));
     await appendOps(valid);
-    const since = Number(body.since) || 0;
+    // Old clients only ever talked to this node and send a bare `since`.
+    const since = body.cursors ? Number(body.cursors[NODE_ID]) || 0 : Number(body.since) || 0;
     send(res, 200, {
+        node: NODE_ID,
         acked: valid.map((op) => op.id), // durable now (or already were)
         rejected: incoming.filter((op) => validateOp(op)).map((op) => ({ id: op && op.id, error: validateOp(op) })),
         ops: log.filter((e) => e.seq > since).map((e) => e.op),
@@ -156,6 +165,8 @@ function status() {
     const byType = {};
     for (const e of log) byType[e.op.type] = (byType[e.op.type] || 0) + 1;
     return {
+        node: NODE_ID,
+        radio: radio ? radio.status() : null,
         ops: log.length,
         uniqueIds: new Set(log.map((e) => e.op.id)).size,
         devices: authors.size,
@@ -204,6 +215,14 @@ async function handler(req, res) {
         console.error(e);
         send(res, e.status || (e instanceof SyntaxError ? 400 : 500), e.message);
     }
+}
+
+// ---- LoRa radio link to a drop point (gate seven) ----
+
+let radio = null;
+if (process.env.RADIO_PORT) {
+    const { startRadioBridge } = await import("./radio-bridge.js");
+    radio = startRadioBridge({ port: process.env.RADIO_PORT, log, appendOps, validateOp, dataDir: DATA_DIR });
 }
 
 function lanUrls(scheme, port) {

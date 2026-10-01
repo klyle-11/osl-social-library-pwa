@@ -106,6 +106,10 @@ Plan how you'll renew. Certificates last 90 days or less.
 
 The **This device** tab has testing tools (Check the node, Send everything again, Copy test report) and shows HTTPS / service worker / install / persistent-storage status. Use it for the gate-five phone test.
 
+## Radio link (gate seven)
+
+`firmware/` holds the ESP32-S3 LoRa firmware: a **modem** for the Pi and a **drop point** for out in the neighbourhood. Start the server with `RADIO_PORT=/dev/ttyUSB0` to connect the modem. See [firmware/README.md](firmware/README.md). It also explains when you don't need radios at all.
+
 ## Notes
 
 - To force every phone to re-download the whole app shell, bump `SHELL_CACHE` in `sw.js`. Normal updates already reach phones the next time they open the app online (stale-while-revalidate).

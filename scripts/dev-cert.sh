@@ -29,7 +29,8 @@ if [ ! -f ca.pem ]; then
 fi
 
 # iOS rejects server certs valid for more than 825 days, and requires SAN + serverAuth.
-openssl req -new -nodes -newkey rsa:2048 -keyout key.pem -out server.csr -subj "/CN=OSL node"
+# EC P-256 key: TLS handshakes are much faster on the ESP32 drop point than with RSA.
+openssl req -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -keyout key.pem -out server.csr -subj "/CN=OSL node"
 printf "subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\n" "$SAN" > ext.cnf
 openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial \
   -out cert.pem -days 397 -sha256 -extfile ext.cnf
