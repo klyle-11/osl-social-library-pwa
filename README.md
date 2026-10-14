@@ -2,6 +2,120 @@
 
 *Developed for Maroon's Motherboard project.*
 
+---
+
+# This branch: `workshop`
+
+A running demo of the workshop version: one screen presents a document, and everyone in the room annotates it from their own phone or laptop. It exists for UX testing on real devices and for network testing. Everything below the next rule is the project background and still applies.
+
+| | |
+|---|---|
+| **Who wrote this code** | Claude, at your request, as a demo. You rewrite it yourself with [docs/workshop-write-it-yourself.md](docs/workshop-write-it-yourself.md) (no solution code in it). |
+| **Built on** | The `fastroute` demo (core contract, node, Preact shell), extended for the workshop. `firmware/` comes from `esp32-lora`. |
+| **Where it stops** | At Gate three. Offline install on phones needs HTTPS, which needs the domain. |
+| **Not committed** | All of this is in the working tree; nothing has been committed or pushed. |
+
+## What works now
+
+| Feature | State |
+|---|---|
+| Gallery front page, shared header with search and kind filter | Works |
+| Reader: document on the left; details, presence and notes on the right (stacked on phones) | Works |
+| Whole-item notes, appearing on other devices within about two seconds | Works |
+| Details (metadata) filled in or corrected by anyone, latest wins per field | Works |
+| Presence: "3 online", "Rosa is also viewing this document" | Works |
+| Big screen (`#/present`): document, join QR code, who is here, notes as they arrive | Works |
+| Pairing code for a presenter and for one digitization station | Works |
+| Station upload of whole files (image, PDF, audio, video), streamed and hashed | Works |
+| Audio and video playback with seeking (Range requests) | Works in a test browser; check on real phones |
+| Sync screen: waiting to send, pause, sync now | Works |
+| Storage in IndexedDB; save and load your work as a file | Works |
+| Offline install and offline reopening on phones | **Needs the domain** (works on `localhost` only) |
+| Radio link | Firmware present; bench test only (see below) |
+| Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
+
+Checked with 29 core tests, `curl` against every endpoint, and a scripted laptop, phone and big screen in a headless browser. It has **not** been run on a real phone or on the Pi yet.
+
+## Run it
+
+```
+npm install
+npm start            # builds, then runs the node on port 8080
+```
+
+The node prints its addresses and a **pairing code**:
+
+- **This computer:** `http://localhost:8080`
+- **Phones on the same Wi-Fi:** `http://<this computer's address>:8080`
+- **Big screen:** `http://localhost:8080/#/present`
+
+| Command | Does |
+|---|---|
+| `npm start` | Build, then run the node |
+| `npm run dev` | Rebuild and reload on every save |
+| `npm run check` | Type-check app, core and service worker |
+| `npm test` | Core tests |
+| `npm run catalog` | Rebuild the catalog after adding files to `library/files/` |
+| `PORT=9000 npm start` | Use another port |
+| `OSL_CODE=123456 npm start` | Fix the pairing code instead of a random one |
+
+**To present:** on the facilitator's device open You → Pair this device, enter the code, choose Presenter. Open a document and choose "Show on the screen". Open `#/present` on whatever is plugged into the projector.
+
+**To upload from the digitization station:** pair as Digitization station, then use Add. Only one station is paired at a time; pairing another replaces it.
+
+**To add documents by hand:** drop files in `library/files/`, run `npm run catalog`, and edit the new entries in `library/documents.json`.
+
+**Data:** contributions are in `data/ops.jsonl` and uploads in `data/media/`. Delete `data/` to start clean.
+
+## On the Raspberry Pi
+
+It runs on ARM as it is: the node uses only Node's built-in modules.
+
+1. Use 64-bit Raspberry Pi OS and Node 20 or newer (`node -v`).
+2. Clone the repo on the Pi and run `npm install` **there**. Do not copy `node_modules` from the Mac; the build tools in it are per-platform.
+3. `npm start`, then open `http://localhost:8080/#/present` in the Pi's browser for the HDMI screen.
+
+Not done yet for the Pi: starting on boot, and the Pi's own Wi-Fi network. Both belong to Gate three.
+
+## Where the domain comes in
+
+Nothing in the list above needs it. You need the domain for the next step only:
+
+1. Rent the domain.
+2. Get a Let's Encrypt certificate for it with a DNS challenge.
+3. Put the files at `certs/cert.pem` (the full chain) and `certs/key.pem`; the node switches to HTTPS when both exist.
+4. Make the Pi's Wi-Fi answer that name with the Pi's address.
+
+After that phones can install the app and reopen it offline. Until then they can use it live on the Wi-Fi, and `localhost` on a laptop shows the offline behaviour.
+
+## Radio: what is ready tonight
+
+- `firmware/` now builds for the **LilyGO T3-S3** and the **Seeed XIAO ESP32S3 + Wio-SX1262 kit**, as well as the Heltec V3.
+- Boards of different makes can talk to each other; they share the same radio chip and settings.
+- **Ready:** a bench test of the radio link between two boards, using the modem build on both. See [TODO.md](TODO.md).
+- **Not ready:** the drop point. Its build does not compile yet (an include clash in `src/droppoint/web.cpp`). It also serves the app and syncs in the format of the `esp32-lora` branch, not this one, and it expects the certificate. It needs fixing and porting before phones can use a drop point with this app.
+- **Not ready:** more than two boards on the air at once. Frames carry no addresses yet, so a third board would confuse the other two. That is the relay work.
+
+## Decisions on this branch
+
+- **W-D1. PWA with a Let's Encrypt certificate.** Renewal is the one thing that needs the internet. If the certificate lapses, the app still opens and saves locally, and "Save my work" carries contributions by file.
+- **W-D2. Polling, no WebSocket.** Every open device asks for news every two seconds. The same endpoint can later run on an ESP32 drop point.
+- **W-D3. Presence is not an op.** It lives in the node's memory and is forgotten ten seconds after a device stops asking. It is never stored or sent by radio.
+- **W-D4. No live cursors.** One screen presents; others annotate. Presence is "who is online" and "who is viewing this".
+- **W-D5. Whole-item notes first.** The marginalia engine (passage anchors) comes later.
+- **W-D6. Details are ops.** A `describe` op per field, latest wins, the original document op never changes.
+- **W-D7. Roles come from a pairing code** on the node's own screen. Several presenters, one digitization station.
+- **W-D8. Custom LoRa firmware, ops only.** The Pi is the only home node; drop points are ESP32-only; secondary drop points will relay through the main one. Not compatible with Meshtastic.
+- **W-D9. Sync is managed inside the app** (the Sync screen), not a separate app.
+- **Hardware:** Raspberry Pi 5; one LilyGO T3-S3 v1.3 (SX1262); three Seeed XIAO ESP32S3 with Wio-SX1262; all 915 MHz.
+
+**Open:** which domain; Omeka S or Classic; what else the Sync screen should control; whether a Waveshare board joins (needs its model to add pins).
+
+---
+
+# Background: the whole project
+
+
 A communal, local-first library that feels like social media without the profit machinery. People scan a QR code, browse a feed of archive documents, keep documents in collections, annotate them, and take their collections home on their phone to work offline. Their contributions sync back to a node (a Pi or an old laptop) when they return. Later, they can also sync over LoRa radio without internet.
 
 This README is the owner's reference: **what has been decided, why, what it costs, and the technical facts you need to keep in your head.** The work itself lives in [TODO.md](TODO.md). Source conversations and guides live in [docs/](docs/).
@@ -185,9 +299,5 @@ One op is about 200 bytes, which is roughly one LoRa packet, while one photo is 
 ## Parking lot
 TiddlyWiki export · zero-JS static export · Capacitor · ESP32-only node for small groups · Reticulum / Meshtastic · ActivityPub gateway (opt-in) · `Link` / `CommentBodyPosition` passage anchors (reader subproject, RR11–RR12) · solar drop-point power budget · moderation and TK labels · search/embeddings.
 
-## Scripts (current)
-| Command | Does |
-|---|---|
-| `npm run dev` | esbuild watch and serve at the repo root |
-| `npm run build` | minified bundle → `dist/app.js` |
-| `npm run check` | `tsc`, which type-checks without emitting (esbuild doesn't type-check) |
+## Scripts
+See "Run it" at the top of this file for the scripts on this branch.

@@ -1,4 +1,69 @@
-# TODO: Fast track to user testing
+# TODO: workshop branch
+
+This section is for the `workshop` branch. The original fast-track list is kept below as background.
+
+## Tonight: radio bench test
+
+Two boards, both with the **modem** build, both plugged into this computer. No phones or app involved; this proves boards, pins, antennas and settings.
+
+- [ ] Attach the antenna to every board **before** powering it.
+- [ ] Add PlatformIO to your shell: `export PATH="$HOME/.platformio/penv/bin:$PATH"`.
+- [ ] Flash the LilyGO: `cd firmware && pio run -e modem-lilygo-t3s3 -t upload`.
+- [ ] Flash a XIAO: `pio run -e modem-xiao-s3 -t upload`.
+- [ ] Find the two ports: `ls /dev/cu.usbmodem*`.
+- [ ] Run `node scripts/radio-test.mjs <port A> <port B>` from the repo root.
+- [ ] If a board reports the radio did not start, the pins for that board are wrong; note the error number.
+- [ ] Repeat with one board in another room. Write down delivered count, time each, RSSI and SNR.
+
+If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
+
+**Done when:** the test prints PASS both ways for LilyGO to XIAO and for XIAO to XIAO, and the numbers are in your log.
+
+## Device and network testing (the demo)
+
+- [ ] `npm start`; open the big screen on the laptop or Pi.
+- [ ] iPhone (Safari) and Android (Chrome) on the same Wi-Fi: open the address, read, post a note.
+- [ ] A note from each phone appears on the other and on the big screen within three seconds.
+- [ ] "Rosa is also viewing this document" appears and disappears correctly.
+- [ ] Pair a presenter; "Show on the screen"; "Follow the screen" moves the phones.
+- [ ] Play and **seek** the sample film and sample recording on both phones.
+- [ ] Open the sample PDF on both phones (iPhone shows only the first page inline; use "Open full screen").
+- [ ] Pair a laptop as the digitization station and upload a real scan, a real audio file and a real video.
+- [ ] Turn the phone's Wi-Fi off, post a note, turn it on: the Sync screen shows it waiting, then sent.
+- [ ] Stop the node for a minute while phones are open; start it; nothing is lost or doubled.
+- [ ] Ten or more devices at once: does the node keep up?
+- [ ] VoiceOver and TalkBack: open a document and post a note.
+- [ ] On the Pi 5: `npm install`, `npm start`, and repeat the first six checks.
+- [ ] Write down every place someone hesitated. That is the UX result.
+
+## Blocked on the domain (Gate three)
+
+- [ ] Rent the domain.
+- [ ] Certificate by DNS challenge; files into `certs/`.
+- [ ] The Pi's own Wi-Fi and local name lookup.
+- [ ] iPhone and Android: padlock with no warning, internet unplugged.
+- [ ] Install to the home screen; airplane mode; reopen; write; reconnect; sync.
+- [ ] Decide the renewal routine (reuse the key, so only the certificate has to travel).
+- [ ] Start the node on boot.
+
+## After that
+
+- [ ] Port the drop point firmware to this branch's op format and `/api/ops`.
+- [ ] Pi-side radio bridge in `node/`.
+- [ ] Addresses and relaying, so more than two boards can share the air.
+- [ ] Sync screen: the drop-point stop becomes real.
+- [ ] Omeka export of documents with their notes as private items (which Omeka?).
+- [ ] `kiwix-serve` beside the library for ZIM archives.
+- [ ] NFC tag for first pickup; redeem roles inside the installed app.
+- [ ] Marginalia engine for passage anchors.
+- [ ] TiddlyWiki export as the takeaway file.
+- [ ] Rewrite it yourself: [docs/workshop-write-it-yourself.md](docs/workshop-write-it-yourself.md).
+
+---
+
+# Background: the original fast-track list
+
+## Fast track to user testing
 
 The goal is **a seeded, clickable OSL on real phones, tested for the design and business logic.** Do people keep documents, make collections, name them, and annotate? After that, return to the gates. See README **D13** for what's cut and why.
 

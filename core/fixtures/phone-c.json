@@ -1,0 +1,6 @@
+[
+  { "id": "d-c:1", "user": "d-c", "timestamp": "2026-10-04T14:20:00Z", "type": "name-collection", "collectionId": "d-c/1", "name": "Church picnics" },
+  { "id": "d-c:2", "user": "d-c", "timestamp": "2026-10-04T14:21:00Z", "type": "add-to-collection", "collectionId": "d-c/1", "documentId": "d-a:1" },
+  { "id": "d-c:3", "user": "d-c", "timestamp": "2026-10-04T15:00:00Z", "type": "name-collection", "collectionId": "d-c/1", "name": "Summer gatherings" },
+  { "id": "d-a:9", "user": "d-a", "timestamp": "2026-10-04T15:30:00Z", "type": "name-collection", "collectionId": "d-c/1", "name": "Not yours to name" }
+]

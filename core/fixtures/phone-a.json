@@ -1,0 +1,5 @@
+[
+  { "id": "d-a:1", "user": "d-a", "timestamp": "2026-10-04T14:00:00Z", "type": "document", "fileType": "text", "properties": { "title": "Corner store photo", "author": "", "type": "photo" } },
+  { "id": "d-a:2", "user": "d-a", "timestamp": "2026-10-04T14:05:00Z", "type": "annotation", "target": "d-a:1", "body": "That's the corner store on Dickinson Street.", "access": "public" },
+  { "id": "d-b:1", "user": "d-b", "timestamp": "2026-10-04T14:10:00Z", "type": "annotation", "target": "d-a:1", "body": "My aunt worked there.", "access": "public" }
+]

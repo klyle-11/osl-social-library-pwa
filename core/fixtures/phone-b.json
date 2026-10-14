@@ -1,0 +1,5 @@
+[
+  { "id": "d-b:1", "user": "d-b", "timestamp": "2026-10-04T14:10:00Z", "type": "annotation", "target": "d-a:1", "body": "My aunt worked there.", "access": "public" },
+  { "id": "d-b:2", "user": "d-b", "timestamp": "2026-10-04T14:12:00Z", "type": "add-to-collection", "collectionId": "d-b/kept", "documentId": "d-a:1" },
+  { "id": "d-b:3", "user": "d-b", "timestamp": "2026-10-04T14:15:00Z", "type": "name-user", "name": "Rosa" }
+]

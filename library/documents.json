@@ -1,0 +1,126 @@
+{
+  "stewards": [
+    "steward"
+  ],
+  "documents": [
+    {
+      "id": "steward:1",
+      "added": "2026-09-20T15:00:00Z",
+      "file": "we-wear-the-mask.txt",
+      "title": "We Wear the Mask",
+      "author": "Paul Laurence Dunbar",
+      "type": "poem",
+      "year": "1895",
+      "description": "Sample document (public domain). Replace with your own.",
+      "alt": ""
+    },
+    {
+      "id": "steward:2",
+      "added": "2026-09-20T15:05:00Z",
+      "file": "hope-is-the-thing-with-feathers.txt",
+      "title": "\"Hope\" is the thing with feathers",
+      "author": "Emily Dickinson",
+      "type": "poem",
+      "year": "",
+      "description": "Sample document (public domain).",
+      "alt": ""
+    },
+    {
+      "id": "steward:3",
+      "added": "2026-09-20T15:10:00Z",
+      "file": "on-being-brought-from-africa-to-america.txt",
+      "title": "On Being Brought from Africa to America",
+      "author": "Phillis Wheatley",
+      "type": "poem",
+      "year": "1773",
+      "description": "Sample document (public domain).",
+      "alt": ""
+    },
+    {
+      "id": "steward:4",
+      "added": "2026-09-20T15:15:00Z",
+      "url": "https://www.gutenberg.org/ebooks/search/?query=The+Philadelphia+Negro",
+      "title": "The Philadelphia Negro",
+      "author": "W. E. B. Du Bois",
+      "type": "book",
+      "year": "1899",
+      "description": "Sample link. Links show their details offline, but the page itself needs a connection."
+    },
+    {
+      "id": "steward:5",
+      "added": "2026-09-20T15:20:00Z",
+      "url": "https://www.gutenberg.org/ebooks/search/?query=Leaves+of+Grass",
+      "title": "Leaves of Grass",
+      "author": "Walt Whitman",
+      "type": "book",
+      "year": "1855",
+      "description": "Sample link."
+    },
+    {
+      "id": "steward:6",
+      "added": "2026-09-20T15:25:00Z",
+      "url": "https://archive.org/search?query=Within+Our+Gates+1920",
+      "title": "Within Our Gates",
+      "author": "Oscar Micheaux",
+      "type": "film",
+      "year": "1920",
+      "description": "Sample link."
+    },
+    {
+      "file": "sample-photograph.jpg",
+      "title": "Sample photograph",
+      "author": "",
+      "type": "photo",
+      "year": "",
+      "description": "A placeholder image for testing. Replace with a scan from the archive.",
+      "alt": "A soft gradient from deep indigo through maroon to gold.",
+      "id": "steward:7",
+      "added": "2026-10-14T02:36:13Z"
+    },
+    {
+      "file": "sample-recording.mp3",
+      "title": "Sample recording",
+      "author": "",
+      "type": "audio",
+      "year": "",
+      "description": "Ten seconds of a test tone, to check audio playback and seeking on each device.",
+      "alt": "",
+      "id": "steward:8",
+      "added": "2026-10-14T02:36:13Z"
+    },
+    {
+      "file": "sample-film.mp4",
+      "title": "Sample film",
+      "author": "",
+      "type": "shortFilm",
+      "year": "",
+      "description": "Eight seconds of a test pattern with a tone, to check video playback and seeking on each device.",
+      "alt": "",
+      "id": "steward:9",
+      "added": "2026-10-14T02:36:13Z"
+    },
+    {
+      "file": "a-local-first-reading-room.pdf",
+      "title": "A Local-First Reading Room",
+      "author": "",
+      "type": "essay",
+      "year": "",
+      "description": "Notes toward a shared-annotation device. From this project's docs folder, here as a sample PDF.",
+      "alt": "",
+      "id": "steward:10",
+      "added": "2026-10-14T02:36:13Z"
+    }
+  ],
+  "collections": [
+    {
+      "slug": "start-here",
+      "name": "Start here",
+      "added": "2026-09-20T15:30:00Z",
+      "documents": [
+        "steward:1",
+        "steward:2",
+        "steward:3"
+      ]
+    }
+  ]
+}

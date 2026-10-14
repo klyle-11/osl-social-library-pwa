@@ -1,0 +1,192 @@
+{
+  "stewards": [
+    "steward"
+  ],
+  "ops": [
+    {
+      "id": "steward:1",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:00:00Z",
+      "type": "document",
+      "properties": {
+        "title": "We Wear the Mask",
+        "author": "Paul Laurence Dunbar",
+        "type": "poem",
+        "year": "1895",
+        "description": "Sample document (public domain). Replace with your own."
+      },
+      "url": "library/files/we-wear-the-mask.txt",
+      "fileType": "text/plain",
+      "hash": "sha256-b6381238a0fc3550e8eaee93266ada60caeb34feb0854fc35ad6f45057450ce1"
+    },
+    {
+      "id": "steward:2",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:05:00Z",
+      "type": "document",
+      "properties": {
+        "title": "\"Hope\" is the thing with feathers",
+        "author": "Emily Dickinson",
+        "type": "poem",
+        "description": "Sample document (public domain)."
+      },
+      "url": "library/files/hope-is-the-thing-with-feathers.txt",
+      "fileType": "text/plain",
+      "hash": "sha256-4a03c26c3ce77c63c571d45567d795686872196768d2f3b02af6c743040de9c0"
+    },
+    {
+      "id": "steward:3",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:10:00Z",
+      "type": "document",
+      "properties": {
+        "title": "On Being Brought from Africa to America",
+        "author": "Phillis Wheatley",
+        "type": "poem",
+        "year": "1773",
+        "description": "Sample document (public domain)."
+      },
+      "url": "library/files/on-being-brought-from-africa-to-america.txt",
+      "fileType": "text/plain",
+      "hash": "sha256-68d8781db5facb3e71d75247f8e855b78cbc0c8fa202f6a1bf2ab095b9448725"
+    },
+    {
+      "id": "steward:4",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:15:00Z",
+      "type": "document",
+      "properties": {
+        "title": "The Philadelphia Negro",
+        "author": "W. E. B. Du Bois",
+        "type": "book",
+        "year": "1899",
+        "description": "Sample link. Links show their details offline, but the page itself needs a connection."
+      },
+      "url": "https://www.gutenberg.org/ebooks/search/?query=The+Philadelphia+Negro",
+      "fileType": "link"
+    },
+    {
+      "id": "steward:5",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:20:00Z",
+      "type": "document",
+      "properties": {
+        "title": "Leaves of Grass",
+        "author": "Walt Whitman",
+        "type": "book",
+        "year": "1855",
+        "description": "Sample link."
+      },
+      "url": "https://www.gutenberg.org/ebooks/search/?query=Leaves+of+Grass",
+      "fileType": "link"
+    },
+    {
+      "id": "steward:6",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:25:00Z",
+      "type": "document",
+      "properties": {
+        "title": "Within Our Gates",
+        "author": "Oscar Micheaux",
+        "type": "film",
+        "year": "1920",
+        "description": "Sample link."
+      },
+      "url": "https://archive.org/search?query=Within+Our+Gates+1920",
+      "fileType": "link"
+    },
+    {
+      "id": "steward:7",
+      "user": "steward",
+      "timestamp": "2026-10-14T02:36:13Z",
+      "type": "document",
+      "properties": {
+        "title": "Sample photograph",
+        "author": "",
+        "type": "photo",
+        "description": "A placeholder image for testing. Replace with a scan from the archive.",
+        "alt": "A soft gradient from deep indigo through maroon to gold."
+      },
+      "url": "library/files/sample-photograph.jpg",
+      "fileType": "image/jpeg",
+      "hash": "sha256-a319fc33479cb777203cc93d81d63a940dec6135dde8e51f3d2ffea0d726f551"
+    },
+    {
+      "id": "steward:8",
+      "user": "steward",
+      "timestamp": "2026-10-14T02:36:13Z",
+      "type": "document",
+      "properties": {
+        "title": "Sample recording",
+        "author": "",
+        "type": "audio",
+        "description": "Ten seconds of a test tone, to check audio playback and seeking on each device."
+      },
+      "url": "library/files/sample-recording.mp3",
+      "fileType": "audio/mpeg",
+      "hash": "sha256-f1d5b6ec68c91e87dd0570b376cc87ec575562ede8355e14c542dca634342284"
+    },
+    {
+      "id": "steward:9",
+      "user": "steward",
+      "timestamp": "2026-10-14T02:36:13Z",
+      "type": "document",
+      "properties": {
+        "title": "Sample film",
+        "author": "",
+        "type": "shortFilm",
+        "description": "Eight seconds of a test pattern with a tone, to check video playback and seeking on each device."
+      },
+      "url": "library/files/sample-film.mp4",
+      "fileType": "video/mp4",
+      "hash": "sha256-c82f929ca27ad7d2c397d9f1604147b7e52ea2bc5a250b6c15ba2f04c0c043d4"
+    },
+    {
+      "id": "steward:10",
+      "user": "steward",
+      "timestamp": "2026-10-14T02:36:13Z",
+      "type": "document",
+      "properties": {
+        "title": "A Local-First Reading Room",
+        "author": "",
+        "type": "essay",
+        "description": "Notes toward a shared-annotation device. From this project's docs folder, here as a sample PDF."
+      },
+      "url": "library/files/a-local-first-reading-room.pdf",
+      "fileType": "application/pdf",
+      "hash": "sha256-1e178d12a11bd31d3c865b97cd3685718a74e91f9a42a14f38d79f435571a2f7"
+    },
+    {
+      "id": "steward:11",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:30:00Z",
+      "type": "name-collection",
+      "collectionId": "steward/start-here",
+      "name": "Start here"
+    },
+    {
+      "id": "steward:12",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:30:00Z",
+      "type": "add-to-collection",
+      "collectionId": "steward/start-here",
+      "documentId": "steward:1"
+    },
+    {
+      "id": "steward:13",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:30:00Z",
+      "type": "add-to-collection",
+      "collectionId": "steward/start-here",
+      "documentId": "steward:2"
+    },
+    {
+      "id": "steward:14",
+      "user": "steward",
+      "timestamp": "2026-09-20T15:30:00Z",
+      "type": "add-to-collection",
+      "collectionId": "steward/start-here",
+      "documentId": "steward:3"
+    }
+  ]
+}
