@@ -28,6 +28,7 @@ const PORT = Number(process.env.PORT ?? 8080);
 const MAX_BODY = 8 * 1024 * 1024;
 const MAX_UPLOAD = Number(process.env.OSL_MAX_UPLOAD ?? 2 * 1024 * 1024 * 1024);
 const TOKENS = join(DATA, "tokens.json");
+const LOG_ID_FILE = join(DATA, "log-id");
 const DEV = process.env.OSL_DEV === "1";
 
 // dev only: the build script tells us when to reload every open page
@@ -43,15 +44,43 @@ mkdirSync(MEDIA, { recursive: true });
 const log: Op[] = [];
 const byId = new Map<string, string>();     // id -> canonical form
 
+// A cursor is "<log id>.<position>". The log id is made with the log, so after a clean
+// start (data/ deleted) or on another node, a phone's old cursor matches nothing and it
+// reads from the beginning, instead of waiting for a position past ops it never got.
+const LOG_ID = (existsSync(LOG) && existsSync(LOG_ID_FILE) && readFileSync(LOG_ID_FILE, "utf8").trim()) || newLogId();
+
+function newLogId(): string {
+    const id = randomBytes(6).toString("hex");
+    writeFileSync(LOG_ID_FILE, id);
+    return id;
+}
+
+function position(cursor: string | null): number {
+    const [id, n] = (cursor ?? "").split(".");
+    const at = Number(n);
+    return id === LOG_ID && Number.isInteger(at) && at >= 0 && at <= log.length ? at : 0;
+}
+
+const cursorNow = () => `${LOG_ID}.${log.length}`;
+
 if (existsSync(LOG)) {
-    for (const line of readFileSync(LOG, "utf8").split("\n")) {
+    // A power cut during a write leaves a last line cut short. It is skipped (and kept in
+    // the file), so the node still starts with everything else.
+    const text = readFileSync(LOG, "utf8");
+    let damaged = 0;
+    for (const line of text.split("\n")) {
         if (!line.trim()) continue;
-        const v = validateOp(JSON.parse(line));
+        let parsed: unknown;
+        try { parsed = JSON.parse(line); } catch { damaged++; continue; }
+        const v = validateOp(parsed);
         if (v.ok && !byId.has(v.op.id)) {
             log.push(v.op);
             byId.set(v.op.id, canonical(v.op));
         }
     }
+    // without this the next op would be glued onto the cut line, and lost with it
+    if (text.length && !text.endsWith("\n")) appendFileSync(LOG, "\n");
+    if (damaged) console.warn(`${damaged} damaged line${damaged === 1 ? "" : "s"} in ${LOG} skipped (left in the file).`);
 }
 
 function accept(input: unknown[]) {
@@ -75,7 +104,7 @@ function accept(input: unknown[]) {
         appendFileSync(LOG, JSON.stringify(v.op) + "\n");
         added++;
     }
-    return { added, duplicates, conflicts, rejected, cursor: String(log.length) };
+    return { added, duplicates, conflicts, rejected, cursor: cursorNow() };
 }
 
 // ---- who is here, and what the presenting screen shows: memory only, never the log ----
@@ -85,16 +114,23 @@ const board = new PresenceBoard();
 // or the digitization station. Presenters can be several; the station is one at a time. ----
 const PAIR_CODE = process.env.OSL_CODE ?? String(randomInt(0, 1_000_000)).padStart(6, "0");
 type Role = "presenter" | "station";
-const tokens: { presenter: string[], station: string | null } = existsSync(TOKENS)
-    ? { presenter: [], station: null, ...JSON.parse(readFileSync(TOKENS, "utf8")) }
-    : { presenter: [], station: null };
+const tokens: { presenter: string[], station: string | null } = { presenter: [], station: null, ...readTokens() };
+
+// A tokens file that can't be read means devices pair again; the node still starts.
+function readTokens(): object {
+    if (!existsSync(TOKENS)) return {};
+    try { return JSON.parse(readFileSync(TOKENS, "utf8")); }
+    catch { console.warn(`${TOKENS} could not be read: paired devices will need to pair again.`); return {}; }
+}
 const wrongCodes = new Map<string, { count: number, until: number }>();
 
 function pair(role: Role): string {
     const token = randomBytes(24).toString("hex");
     if (role === "station") tokens.station = token;      // pairing a new station unpairs the old one
     else tokens.presenter = [...tokens.presenter.slice(-9), token];
-    writeFileSync(TOKENS, JSON.stringify(tokens));
+    // written aside, then renamed over the old one, so a power cut never leaves half a file
+    writeFileSync(TOKENS + ".tmp", JSON.stringify(tokens));
+    renameSync(TOKENS + ".tmp", TOKENS);
     return token;
 }
 
@@ -245,10 +281,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // The one request every device repeats: "what's new since my cursor?" It also
     // says who is asking and what they have open, which is all presence needs.
     if (path === "/api/ops" && req.method === "GET") {
-        const after = Math.max(0, Number(url.searchParams.get("after")) || 0);
+        const after = position(url.searchParams.get("after"));
         const user = (url.searchParams.get("user") ?? "").slice(0, 64);
         if (user) board.hello(user, (url.searchParams.get("viewing") ?? "").slice(0, 200), Date.now());
-        return json(res, 200, { ops: log.slice(after), cursor: String(log.length), presence: board.snapshot(Date.now()) });
+        return json(res, 200, { ops: log.slice(after), cursor: cursorNow(), presence: board.snapshot(Date.now()) });
     }
 
     if (path === "/api/pair" && req.method === "POST") {

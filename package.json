@@ -13,7 +13,8 @@
     "catalog": "node scripts/catalog.mjs",
     "check": "tsc -p . && tsc -p core && tsc -p app/tsconfig.sw.json",
     "test": "esbuild core/test/*.test.ts --bundle --platform=node --format=esm --outdir=.test-build --out-extension:.js=.mjs --log-level=warning && node --test .test-build/*.test.mjs",
-    "cert": "node scripts/cert.mjs"
+    "cert": "node scripts/cert.mjs",
+    "rehearse": "node scripts/build.mjs && node scripts/rehearse.mjs"
   },
   "repository": {
     "type": "git",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "esbuild": "^0.28.2",
+    "playwright-core": "^1.56.1",
     "typescript": "^7.0.2"
   }
 }

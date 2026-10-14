@@ -34,7 +34,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Radio link | Firmware present; bench test only (see below) |
 | Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
 
-Checked with 29 core tests, `curl` against every endpoint, and a scripted laptop, phone and big screen in a headless browser. It has **not** been run on a real phone or on the Pi yet.
+Checked with 29 core tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices. It has **not** been run on a real phone or on the Pi yet.
 
 ## Run it
 
@@ -55,6 +55,7 @@ The node prints its addresses and a **pairing code**:
 | `npm run dev` | Rebuild and reload on every save |
 | `npm run check` | Type-check app, core and service worker |
 | `npm test` | Core tests |
+| `npm run rehearse` | Rehearse the device tests in headless Chrome against a scratch node (about three minutes; leaves `data/` alone) |
 | `npm run catalog` | Rebuild the catalog after adding files to `library/files/` |
 | `PORT=9000 npm start` | Use another port |
 | `OSL_CODE=123456 npm start` | Fix the pairing code instead of a random one |
@@ -65,7 +66,7 @@ The node prints its addresses and a **pairing code**:
 
 **To add documents by hand:** drop files in `library/files/`, run `npm run catalog`, and edit the new entries in `library/documents.json`.
 
-**Data:** contributions are in `data/ops.jsonl` and uploads in `data/media/`. Delete `data/` to start clean.
+**Data:** contributions are in `data/ops.jsonl` and uploads in `data/media/`. Delete `data/` to start clean; phones that were open catch up from the new log by themselves (the cursor carries the log's id, in `data/log-id`; if you copy `data/` to start a second node, delete `log-id` in the copy). A last line cut off by a power cut is skipped and left in the file, and the node still starts.
 
 ## On the Raspberry Pi
 

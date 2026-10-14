@@ -21,6 +21,7 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 
 ## Device and network testing (the demo)
 
+- [ ] `npm run rehearse` passes (28 checks, headless; on the Pi set `CHROME=/usr/bin/chromium`). It covers the notes, presence, presenter, offline, pause, node-restart, clean-start and ten-devices items below without real devices; do them for real anyway, since what it can't see is Safari, Wi-Fi and people.
 - [ ] `npm start`; open the big screen on the laptop or Pi.
 - [ ] iPhone (Safari) and Android (Chrome) on the same Wi-Fi: open the address, read, post a note.
 - [ ] A note from each phone appears on the other and on the big screen within three seconds.

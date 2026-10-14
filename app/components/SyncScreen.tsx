@@ -37,11 +37,13 @@ export function SyncScreen() {
     const waiting = store.outbox.map(id => byId.get(id)).filter((o): o is Op => !!o);
     const mine = store.ops.filter(o => o.user === me).length;
     const title = (id: string) => v.documents[id]?.properties.title ?? "a document";
+    // "synced" describes the last exchange; with notes written since, they're on their way
+    const state = syncState.value === "synced" && waiting.length ? "syncing" : syncState.value;
 
     return (
         <section class="sync-screen">
             <h2 class="sync-screen__title">Sync</h2>
-            <p class={`sync-screen__state sync-screen__state--${syncState.value}`} role="status">{STATE_TEXT[syncState.value]}</p>
+            <p class={`sync-screen__state sync-screen__state--${state}`} role="status">{STATE_TEXT[state]}</p>
             <p class="sync-screen__last">
                 {lastSync.value ? <>Last reached the library <time dateTime={lastSync.value}>{when(lastSync.value)}</time>.</> : "Hasn't reached the library since this page opened."}
             </p>

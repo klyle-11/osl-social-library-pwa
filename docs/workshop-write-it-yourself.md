@@ -138,6 +138,7 @@ One timed box is 25 minutes; a deep box is 45.
 - Two browsers: a note typed in one appears in the other within three seconds.
 - Stop the node. The header changes state, and the network tab shows requests slowing down. Start it: everything waiting is sent.
 - `curl` the endpoint twice with two user ids and read the presence in the reply.
+- With a phone open, stop the node, delete `data/`, start it, and post from another device straight away. The phone must still get that note. (If it doesn't, ask what its cursor points at now.)
 - Interview: what are the three receipts "queued", "stored", and "seen by others", and which does your UI show?
 
 **Reference, afterwards:** `app/sync.ts`, the `/api/ops` handler in `node/server.ts`.
