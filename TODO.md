@@ -55,7 +55,7 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 - [ ] Omeka export of documents with their notes as private items (which Omeka?).
 - [ ] `kiwix-serve` beside the library for ZIM archives.
 - [ ] NFC tag for first pickup; redeem roles inside the installed app.
-- [ ] Marginalia engine for passage anchors.
+- [ ] Marginalia engine for passage anchors: **put off**. Questions M1–M8 and what was measured are in [docs/marginalia-engine-decisions.md](docs/marginalia-engine-decisions.md).
 - [ ] TiddlyWiki export as the takeaway file.
 - [ ] Rewrite it yourself: [docs/workshop-write-it-yourself.md](docs/workshop-write-it-yourself.md).
 

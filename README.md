@@ -109,7 +109,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - **W-D9. Sync is managed inside the app** (the Sync screen), not a separate app.
 - **Hardware:** Raspberry Pi 5; one LilyGO T3-S3 v1.3 (SX1262); three Seeed XIAO ESP32S3 with Wio-SX1262; all 915 MHz.
 
-**Open:** which domain; Omeka S or Classic; what else the Sync screen should control; whether a Waveshare board joins (needs its model to add pins).
+**Open:** which domain; Omeka S or Classic; what else the Sync screen should control; whether a Waveshare board joins (needs its model to add pins); the marginalia engine, put off, questions M1–M8 in [docs/marginalia-engine-decisions.md](docs/marginalia-engine-decisions.md).
 
 ---
 
