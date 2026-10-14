@@ -1,10 +1,11 @@
-{ "contract": {
+{ 
+    "contract": 
     {
         "user": "",
         "message": "",
         "timestamp": "",
-        "document": ,
-        "id": 
+        "document": "",
+        "id": ""
 
     }
 }
