@@ -12,7 +12,7 @@
     "build": "node scripts/build.mjs",
     "catalog": "node scripts/catalog.mjs",
     "check": "tsc -p . && tsc -p core && tsc -p app/tsconfig.sw.json",
-    "test": "esbuild core/test/*.test.ts --bundle --platform=node --format=esm --outdir=.test-build --out-extension:.js=.mjs --log-level=warning && node --test .test-build/",
+    "test": "esbuild core/test/*.test.ts --bundle --platform=node --format=esm --outdir=.test-build --out-extension:.js=.mjs --log-level=warning && node --test .test-build/*.test.mjs",
     "cert": "node scripts/cert.mjs"
   },
   "repository": {

@@ -13,7 +13,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | **Who wrote this code** | Claude, at your request, as a demo. You rewrite it yourself with [docs/workshop-write-it-yourself.md](docs/workshop-write-it-yourself.md) (no solution code in it). |
 | **Built on** | The `fastroute` demo (core contract, node, Preact shell), extended for the workshop. `firmware/` comes from `esp32-lora`. |
 | **Where it stops** | At Gate three. Offline install on phones needs HTTPS, which needs the domain. |
-| **Not committed** | All of this is in the working tree; nothing has been committed or pushed. |
+| **Committed** | Pushed to `origin/workshop`. |
 
 ## What works now
 

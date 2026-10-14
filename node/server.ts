@@ -118,17 +118,29 @@ function json(res: ServerResponse, status: number, body: unknown) {
     res.end(JSON.stringify(body));
 }
 
-function readBody(req: IncomingMessage): Promise<unknown> {
+// A request the client got wrong: answered with its status, not a 500.
+class ClientError extends Error {
+    status: number;
+    constructor(status: number, message: string) { super(message); this.status = status; }
+}
+
+// Bodies are always JSON objects; anything else (empty, malformed, null, an
+// array) is the client's mistake, so it never reaches a handler.
+function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((ok, fail) => {
         let size = 0;
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => {
             size += c.length;
-            if (size > MAX_BODY) { fail(new Error("too large")); req.destroy(); return; }
+            if (size > MAX_BODY) { fail(new ClientError(413, "too large")); req.destroy(); return; }
             chunks.push(c);
         });
         req.on("end", () => {
-            try { ok(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch (e) { fail(e); }
+            let body: unknown;
+            try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+            catch { return fail(new ClientError(400, "expected a JSON body")); }
+            if (typeof body !== "object" || body === null || Array.isArray(body)) return fail(new ClientError(400, "expected a JSON object"));
+            ok(body as Record<string, unknown>);
         });
         req.on("error", fail);
     });
@@ -325,6 +337,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
 function onRequest(req: IncomingMessage, res: ServerResponse) {
     handle(req, res).catch(e => {
+        if (e instanceof ClientError) { if (!res.headersSent) json(res, e.status, { error: e.message }); return; }
         console.error(e);
         if (!res.headersSent) json(res, 500, { error: String(e instanceof Error ? e.message : e) });
     });
