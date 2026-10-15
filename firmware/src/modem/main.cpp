@@ -66,6 +66,7 @@ static void hello() {
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
     if (len < 2 || data[0] != KIND_OP) {
+        logLine("dropped a radio message of an unknown kind");
         radioLink.markDurable(msgId);  // unknown kind: nothing to keep
         return;
     }
@@ -109,8 +110,12 @@ static void handleLine(const std::string& l) {
         if (queue.size() >= 8) return logLine("queue full");
         Outgoing o;
         o.id = id;
+        // ArduinoJson 7's serializeJson replaces a string's contents rather than appending,
+        // so the op goes into its own string first; the kind byte must stay in front.
+        std::string json;
+        serializeJson(d["op"], json);
         o.msg.push_back((char)KIND_OP);
-        serializeJson(d["op"], o.msg);
+        o.msg += json;
         if (o.msg.size() > osl::MAX_MESSAGE) return logLine("op too large for the radio link");
         queue.push_back(o);
     } else if (!strcmp(t, "durable")) {
