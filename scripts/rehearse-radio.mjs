@@ -99,13 +99,18 @@ try {
   A.near = DROP;
   t = await until(20000, async () => (await headerSays(A)).includes('At a drop point'));
   report('A, out at the drop point, sees "At a drop point"', t !== null, took(t));
+  // out of range for a moment, so the note is still on its way when the Sync screen is read
+  await fetch(DROP + '/sim/radio?on=0', { method: 'POST' });
   await post(A, 'Written at the drop point');
-  t = await until(10000, async () => (await A.page.evaluate(() => document.querySelector('.header__pending'))) === null);
-  report('the note leaves A\'s phone (handed in at the drop point)', t !== null, took(t));
   await go(A, '#/sync');
   await A.page.waitForSelector('.sync-screen');
-  const listed = await A.page.textContent('.sync-screen');
-  report('A\'s Sync screen lists it as on the way by radio', /1 on the way by radio/.test(listed) && listed.includes('Written at the drop point'));
+  const syncText = () => A.page.textContent('.sync-screen');
+  t = await until(15000, async () => (await syncText()).includes('0 waiting to send'));
+  report('the note leaves A\'s phone (handed in at the drop point)', t !== null, took(t));
+  const listed = await syncText();
+  report('A\'s Sync screen lists it as on the way by radio', /1 on the way by radio/.test(listed) && listed.includes('Written at the drop point'),
+    /1 on the way by radio/.test(listed) ? '' : listed.slice(0, 300));
+  await fetch(DROP + '/sim/radio?on=1', { method: 'POST' });
 
   t = await until(30000, () => inLibrary('Written at the drop point'));
   report('it crosses the radio and is stored at the library', t !== null, took(t));

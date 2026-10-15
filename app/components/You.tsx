@@ -5,6 +5,7 @@ import { attempt, syncState, tell, tokens, useLibrary, useTransport, views, view
 import { href } from "../route";
 import { canCarry, carried } from "../../adapters/carry";
 import { fileUrl } from "../format";
+import { THEMES, theme } from "../theme";
 
 // Name (optional), taking the library home, and saving your work as a file.
 export function You() {
@@ -55,6 +56,8 @@ export function You() {
                     }} />
                 </label>
             </section>
+
+            <Appearance />
 
             <Pairing />
 
@@ -193,6 +196,32 @@ function Pairing() {
                     <button class="you__unpair" type="button" onClick={() => set("station", null)}>Unpair</button>
                 </p>
             )}
+        </section>
+    );
+}
+
+// Colours for this device only. Each choice is drawn in its own colours.
+function Appearance() {
+    return (
+        <section class="you__section">
+            <fieldset class="theme-picker">
+                <legend class="you__heading theme-picker__legend">Appearance</legend>
+                <div class="theme-picker__list">
+                    {THEMES.map(t => (
+                        <label class="theme-picker__option" key={t.id}>
+                            <input class="theme-picker__input" type="radio" name="theme" value={t.id}
+                                checked={theme.value === t.id} onChange={() => { theme.value = t.id; }} />
+                            <span class="theme-picker__swatch" style={{ background: t.bg, color: t.ink, borderColor: t.ink }}>
+                                <span class="theme-picker__name">{t.name}</span>
+                                <span class="theme-picker__note">{t.note}</span>
+                                <span class="theme-picker__ink" aria-hidden="true">
+                                    {t.dots.map(c => <span class="theme-picker__dot" key={c} style={{ background: c }} />)}
+                                </span>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+            </fieldset>
         </section>
     );
 }

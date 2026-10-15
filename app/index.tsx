@@ -9,6 +9,7 @@ import { newDeviceId, now, recall } from "../adapters/device";
 import { persistStorage } from "../adapters/carry";
 import { TransportContext, opLog, pending, stewards, tell, tokens, viewer } from "./state";
 import { startCarrying, startSync } from "./sync";
+import { startTheme } from "./theme";
 import { Library } from "./components/Library";
 
 declare const OSL_DEV: boolean;   // true only in `npm run dev`; the check is removed from production builds
@@ -23,6 +24,7 @@ async function loadCatalog() {
 }
 
 async function boot() {
+    startTheme();
     // this shell's adapters, best first. Nothing above this line of code knows which one it got.
     const storage: StorageAdapter = await IndexedDBStorage.open().catch(() =>
         LocalStorageStorage.available() ? new LocalStorageStorage() : new MemoryStorage());
@@ -42,9 +44,13 @@ async function boot() {
     pending.value = store.outbox.length;
     store.subscribe(() => { opLog.value = store.ops; });
 
+    // Preact renders beside what's already in the container, so the "Opening the library…"
+    // placeholder from index.html goes first
+    const root = document.getElementById("app")!;
+    root.replaceChildren();
     render(
         <TransportContext.Provider value={transport}><Library store={store} /></TransportContext.Provider>,
-        document.getElementById("app")!
+        root
     );
 
     if (storage instanceof MemoryStorage) {

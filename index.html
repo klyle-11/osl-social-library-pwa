@@ -5,13 +5,20 @@
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <title>OSL — Offline Social Library</title>
         <meta name="description" content="A communal library you can take with you.">
-        <meta name="theme-color" content="#6d1a2a">
+        <meta name="theme-color" content="#fffffc">
         <link rel="manifest" href="manifest.webmanifest">
         <link rel="icon" href="icons/icon-192.png">
         <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-title" content="OSL">
         <link rel="stylesheet" href="styles.css">
+        <script>
+            // the theme chosen on this device (app/theme.ts), applied before the first paint
+            try {
+                var t = localStorage.getItem("osl-theme");
+                if (t && t !== "paper") document.documentElement.dataset.theme = t;
+            } catch (e) {}
+        </script>
     </head>
     <body>
         <div id="app"><p>Opening the library…</p></div>

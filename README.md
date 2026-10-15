@@ -20,6 +20,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Feature | State |
 |---|---|
 | Gallery front page, shared header with search and kind filter | Works |
+| Themes: Paper (`#fffffc`, the default), Selenized light, dark and black, and Maroon; chosen per device on You → Appearance | Works |
 | Reader: document on the left; details, presence and notes on the right (stacked on phones) | Works |
 | Whole-item notes, appearing on other devices within about two seconds | Works |
 | Details (metadata) filled in or corrected by anyone, latest wins per field | Works |
@@ -112,6 +113,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - **W-D7. Roles come from a pairing code** on the node's own screen. Several presenters, one digitization station.
 - **W-D8. Custom LoRa firmware, ops only.** The Pi is the only home node; drop points are ESP32-only; secondary drop points will relay through the main one. Not compatible with Meshtastic.
 - **W-D9. Sync is managed inside the app** (the Sync screen), not a separate app.
+- **W-D11. Paper is the default look.** An archive's page: `#fffffc` and ink, hairline rules, one plain sans-serif, small capitals for section labels (after Monoskop), with Selenized's colours. Selenized light, dark and black and the first Maroon colours are on You → Appearance, kept per device, so the big screen can be dark while phones stay on paper. Every theme's text colours pass 4.5:1.
 - **W-D10. People get the app at the Pi; drop points are for syncing.** The Pi has the library, the files, pairing and the big screen; a drop point is a write-only inbox with 1.5 MB of flash. Both answer at the **same address** (phones keep their data per address), and a drop point always carries the **exact build the Pi serves**: a phone moving between two different builds would switch app versions each time. Before the domain, that address is the Pi's fixed IP and port over plain http, which a drop point can take on its own Wi-Fi network; after it, the domain over HTTPS.
 - **Hardware:** Raspberry Pi 5; one LilyGO T3-S3 v1.3 (SX1262); three Seeed XIAO ESP32S3 with Wio-SX1262; all 915 MHz.
 
