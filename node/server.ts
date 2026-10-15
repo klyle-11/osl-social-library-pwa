@@ -6,7 +6,7 @@ import { createServer as createHttp, type IncomingMessage, type ServerResponse }
 import { createServer as createHttps } from "node:https";
 import {
     existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync, createReadStream,
-    createWriteStream, renameSync, rmSync
+    createWriteStream, renameSync, rmSync, openSync, writeSync, fsyncSync
 } from "node:fs";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { networkInterfaces } from "node:os";
@@ -16,6 +16,8 @@ import { validateOp } from "../core/ops";
 import { canonical } from "../core/merge";
 import { isShareable } from "../core/store";
 import { PresenceBoard } from "../core/presence";
+import { positionFor } from "../core/cursor";
+import { startRadio, type Bridge } from "./radio";
 import type { Op } from "../core/types";
 
 const ROOT = resolve(process.env.OSL_ROOT ?? ".");
@@ -55,11 +57,9 @@ function newLogId(): string {
     return id;
 }
 
-function position(cursor: string | null): number {
-    const [id, n] = (cursor ?? "").split(".");
-    const at = Number(n);
-    return id === LOG_ID && Number.isInteger(at) && at >= 0 && at <= log.length ? at : 0;
-}
+// what a phone sent is every cursor it holds; this node reads its own (core/cursor.ts)
+const position = (after: string | null) => positionFor(after ?? "", LOG_ID, log.length);
+const NODE = { id: LOG_ID, role: "library" };
 
 const cursorNow = () => `${LOG_ID}.${log.length}`;
 
@@ -83,15 +83,20 @@ if (existsSync(LOG)) {
     if (damaged) console.warn(`${damaged} damaged line${damaged === 1 ? "" : "s"} in ${LOG} skipped (left in the file).`);
 }
 
+// Held open for appending. Each batch is on disk (fsync) before anyone is told it was
+// stored: a drop point deletes its copy when the library says so.
+const logFd = openSync(LOG, "a");
+
 function accept(input: unknown[]) {
     let added = 0, duplicates = 0, conflicts = 0;
     const rejected: string[] = [];
+    const fresh = new Map<string, { op: Op, key: string }>();
     for (const item of input) {
         const v = validateOp(item);
         if (!v.ok) { rejected.push(v.reason); continue; }
         if (!isShareable(v.op)) { rejected.push("private annotations stay on the phone"); continue; }
         const key = canonical(v.op);
-        const existing = byId.get(v.op.id);
+        const existing = byId.get(v.op.id) ?? fresh.get(v.op.id)?.key;
         if (existing === key) { duplicates++; continue; }
         if (existing !== undefined) {
             // same id, different payload: keep the first, record the other, never overwrite
@@ -99,13 +104,31 @@ function accept(input: unknown[]) {
             appendFileSync(CONFLICTS, JSON.stringify({ at: new Date().toISOString(), op: v.op }) + "\n");
             continue;
         }
-        log.push(v.op);
-        byId.set(v.op.id, key);
-        appendFileSync(LOG, JSON.stringify(v.op) + "\n");
+        fresh.set(v.op.id, { op: v.op, key });
         added++;
     }
-    return { added, duplicates, conflicts, rejected, cursor: cursorNow() };
+    if (fresh.size) {
+        // on disk first; only then in the log that answers "duplicate" to a retry
+        writeSync(logFd, [...fresh.values()].map(f => JSON.stringify(f.op) + "\n").join(""));
+        fsyncSync(logFd);
+        for (const f of fresh.values()) {
+            log.push(f.op);
+            byId.set(f.op.id, f.key);
+        }
+    }
+    // `keep` is always empty here: the library takes every valid op (a drop point may not)
+    return { added, duplicates, conflicts, rejected, keep: [], cursor: cursorNow(), node: NODE };
 }
+
+// ---- the radio (gate seven): RADIO_PORT is the LoRa modem's serial device, e.g. /dev/ttyACM0 ----
+const RADIO_POSITION = join(DATA, "radio-position");
+const radio: Bridge | null = process.env.RADIO_PORT
+    ? startRadio(process.env.RADIO_PORT, {
+        log, logId: LOG_ID, accept,
+        loadPosition: () => (existsSync(RADIO_POSITION) ? readFileSync(RADIO_POSITION, "utf8").trim() : null),
+        savePosition: p => { writeFileSync(RADIO_POSITION + ".tmp", p); renameSync(RADIO_POSITION + ".tmp", RADIO_POSITION); }
+    })
+    : null;
 
 // ---- who is here, and what the presenting screen shows: memory only, never the log ----
 const board = new PresenceBoard();
@@ -269,6 +292,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
 
     // what a joining phone needs to be told: the addresses this node answers on
+    if (path === "/api/radio" && req.method === "GET") {
+        return json(res, 200, radio ? radio.status() : { radio: "off", how: "start the node with RADIO_PORT set to the modem's serial device" });
+    }
+
     if (path === "/api/info") {
         const scheme = secure ? "https" : "http";
         return json(res, 200, {
@@ -284,7 +311,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const after = position(url.searchParams.get("after"));
         const user = (url.searchParams.get("user") ?? "").slice(0, 64);
         if (user) board.hello(user, (url.searchParams.get("viewing") ?? "").slice(0, 200), Date.now());
-        return json(res, 200, { ops: log.slice(after), cursor: cursorNow(), presence: board.snapshot(Date.now()) });
+        return json(res, 200, { ops: log.slice(after), cursor: cursorNow(), presence: board.snapshot(Date.now()), node: NODE });
     }
 
     if (path === "/api/pair" && req.method === "POST") {
@@ -423,7 +450,10 @@ if (secure) {
 
 server.listen(PORT, "0.0.0.0", () => {
     const scheme = secure ? "https" : "http";
-    console.log(`\nOSL node running — ${log.length} ops in the log\n`);
+    // the version a drop point must match (npm run build:firmware prints its own)
+    const swFile = join(STATIC, "sw.js");
+    const version = existsSync(swFile) ? /osl-shell-([0-9a-f]+)/.exec(readFileSync(swFile, "utf8"))?.[1] ?? "dev" : "?";
+    console.log(`\nOSL node running — ${log.length} ops in the log, app version ${version}${radio ? `, radio on ${process.env.RADIO_PORT}` : ""}\n`);
     console.log(`  this laptop:  ${scheme}://localhost:${PORT}`);
     for (const a of localAddresses()) console.log(`  phones:       ${scheme}://${a}:${PORT}`);
     console.log(`  big screen:   ${scheme}://localhost:${PORT}/#/present`);

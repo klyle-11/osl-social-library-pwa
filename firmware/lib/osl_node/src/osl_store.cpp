@@ -116,11 +116,13 @@ Store::Result Store::add(Src src, const char* id, const char* json, size_t len) 
     return ADDED;
 }
 
-void Store::forEach(uint32_t since, uint32_t upto, bool includePhone, OpFn fn, void* ctx) {
-    if (!log_) return;
+uint32_t Store::forEach(uint32_t since, uint32_t upto, bool includePhone, OpFn fn, void* ctx, size_t limit) {
+    if (!log_ || since >= upto) return upto > since ? upto : since;
     char* line = (char*)malloc(LINE_MAX_BYTES);
-    if (!line) return;
+    if (!line) return since;  // nothing read: the phone asks again from the same place
     fseek(log_, 0, SEEK_SET);
+    size_t handed = 0;
+    uint32_t reached = upto;
     while (fgets(line, LINE_MAX_BYTES, log_)) {
         size_t n = strlen(line);
         uint32_t seq;
@@ -130,10 +132,16 @@ void Store::forEach(uint32_t since, uint32_t upto, bool includePhone, OpFn fn, v
         if (!parseLine(line, n, &seq, &src, &id, &js, &jl)) continue;
         if (seq <= since || seq > upto) continue;
         if (src != ARCHIVE && !includePhone) continue;
+        if (handed == limit) {  // the rest next time, starting after the last one handed out
+            reached = seq - 1;
+            break;
+        }
         fn(ctx, line + js, jl);
+        handed++;
     }
     free(line);
     fseek(log_, 0, SEEK_END);
+    return reached;
 }
 
 bool Store::peekForward(uint32_t* seq, std::string* json) {

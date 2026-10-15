@@ -1,0 +1,470 @@
+[
+ {
+  "case": "annotation",
+  "op": {
+   "id": "a:1",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": true
+ },
+ {
+  "case": "anonymous annotation",
+  "op": {
+   "id": "a:2",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "anonymous"
+  },
+  "valid": true
+ },
+ {
+  "case": "private annotation (valid; it just never leaves the phone)",
+  "op": {
+   "id": "a:3",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "private"
+  },
+  "valid": true
+ },
+ {
+  "case": "a device id with a colon in it",
+  "op": {
+   "id": "dev:x:4",
+   "type": "annotation",
+   "user": "dev:x",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": true
+ },
+ {
+  "case": "timestamp without fraction",
+  "op": {
+   "id": "a:5",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": true
+ },
+ {
+  "case": "1000 accented letters",
+  "op": {
+   "id": "a:6",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "access": "public"
+  },
+  "valid": true
+ },
+ {
+  "case": "1001 accented letters",
+  "op": {
+   "id": "a:7",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "500 emoji are 1000 UTF-16 units",
+  "op": {
+   "id": "a:8",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+   "access": "public"
+  },
+  "valid": true
+ },
+ {
+  "case": "501 emoji are 1002 UTF-16 units",
+  "op": {
+   "id": "a:9",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "body of only spaces",
+  "op": {
+   "id": "a:10",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "   ",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "body of only an ideographic space",
+  "op": {
+   "id": "a:11",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "　",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "counter 0",
+  "op": {
+   "id": "a:0",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "counter not a number",
+  "op": {
+   "id": "a:x",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "no counter",
+  "op": {
+   "id": "a:",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "user does not match the id",
+  "op": {
+   "id": "a:12",
+   "type": "annotation",
+   "user": "b",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "timestamp without Z",
+  "op": {
+   "id": "a:13",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "timestamp in words",
+  "op": {
+   "id": "a:14",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "yesterday",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "bad access",
+  "op": {
+   "id": "a:15",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "secret"
+  },
+  "valid": false
+ },
+ {
+  "case": "unknown type",
+  "op": {
+   "id": "a:16",
+   "type": "delete",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "hi",
+   "access": "public"
+  },
+  "valid": false
+ },
+ {
+  "case": "document",
+  "op": {
+   "id": "a:17",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "image/jpeg",
+   "hash": "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+   "properties": {
+    "title": "T",
+    "author": "",
+    "type": "photo"
+   }
+  },
+  "valid": true
+ },
+ {
+  "case": "document without a title",
+  "op": {
+   "id": "a:18",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "image/jpeg",
+   "hash": "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+   "properties": {
+    "title": "",
+    "author": "",
+    "type": "photo"
+   }
+  },
+  "valid": false
+ },
+ {
+  "case": "document whose properties.type is missing",
+  "op": {
+   "id": "a:19",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "image/jpeg",
+   "hash": "sha256-0000000000000000000000000000000000000000000000000000000000000000",
+   "properties": {
+    "title": "T",
+    "author": ""
+   }
+  },
+  "valid": false
+ },
+ {
+  "case": "link document",
+  "op": {
+   "id": "a:20",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "link",
+   "url": "https://example.org",
+   "properties": {
+    "title": "L",
+    "author": "",
+    "type": "link"
+   }
+  },
+  "valid": true
+ },
+ {
+  "case": "add to collection",
+  "op": {
+   "id": "a:21",
+   "type": "add-to-collection",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/kept",
+   "documentId": "steward:1"
+  },
+  "valid": true
+ },
+ {
+  "case": "collection id without owner",
+  "op": {
+   "id": "a:22",
+   "type": "add-to-collection",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "kept",
+   "documentId": "steward:1"
+  },
+  "valid": false
+ },
+ {
+  "case": "remove from collection",
+  "op": {
+   "id": "a:23",
+   "type": "remove-from-collection",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/kept",
+   "documentId": "steward:1"
+  },
+  "valid": true
+ },
+ {
+  "case": "name a collection",
+  "op": {
+   "id": "a:24",
+   "type": "name-collection",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/24",
+   "name": "For Ama"
+  },
+  "valid": true
+ },
+ {
+  "case": "name too long",
+  "op": {
+   "id": "a:25",
+   "type": "name-user",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  "valid": false
+ },
+ {
+  "case": "name a person",
+  "op": {
+   "id": "a:26",
+   "type": "name-user",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "name": "Rosa"
+  },
+  "valid": true
+ },
+ {
+  "case": "hide",
+  "op": {
+   "id": "a:27",
+   "type": "hide",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1"
+  },
+  "valid": true
+ },
+ {
+  "case": "describe a year",
+  "op": {
+   "id": "a:28",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "year",
+   "value": "1961"
+  },
+  "valid": true
+ },
+ {
+  "case": "clear a description",
+  "op": {
+   "id": "a:29",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "description",
+   "value": ""
+  },
+  "valid": true
+ },
+ {
+  "case": "empty a title",
+  "op": {
+   "id": "a:30",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "title",
+   "value": " "
+  },
+  "valid": false
+ },
+ {
+  "case": "describe a field that can't be",
+  "op": {
+   "id": "a:31",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "fileType",
+   "value": "x"
+  },
+  "valid": false
+ },
+ {
+  "case": "year too long",
+  "op": {
+   "id": "a:32",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "year",
+   "value": "111111111111111111111"
+  },
+  "valid": false
+ },
+ {
+  "case": "not an object",
+  "op": [
+   1,
+   2
+  ],
+  "valid": false
+ }
+]

@@ -1,5 +1,5 @@
-import type { Op, Presence } from "../core/types";
-import type { Transport } from "../core/store";
+import type { Op, OpId, Presence } from "../core/types";
+import type { NodeRole, PushReply, Transport } from "../core/store";
 import { readPresence } from "../core/presence";
 
 export type Role = "presenter" | "station";
@@ -30,8 +30,14 @@ export class HttpTransport implements Transport {
         }
     }
 
-    async pushOps(ops: Op[]): Promise<void> {
-        await this.send("ops", { ops });
+    // which kind of node answered last: the library, or a drop point out in the neighbourhood
+    role: NodeRole = "library";
+
+    async pushOps(ops: Op[]): Promise<PushReply> {
+        const body = await this.send("ops", { ops }) as { keep?: unknown, node?: { role?: unknown } } | null;
+        const keep = Array.isArray(body?.keep) ? body.keep.filter((id): id is OpId => typeof id === "string") : [];
+        this.role = body?.node?.role === "droppoint" ? "droppoint" : "library";
+        return { keep, role: this.role };
     }
 
     async pullOps(cursor: string): Promise<{ ops: unknown[], cursor: string }> {
@@ -42,13 +48,23 @@ export class HttpTransport implements Transport {
         }
         const res = await fetch(`${this.base}ops?${query}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`pull failed: ${res.status}`);
-        const body = await res.json() as { ops?: unknown[], cursor?: string, presence?: unknown };
+        const body = await res.json() as { ops?: unknown[], cursor?: string, presence?: unknown, node?: { role?: unknown } };
+        this.role = body.node?.role === "droppoint" ? "droppoint" : "library";
         this.onPresence?.(readPresence(body.presence));
         return { ops: Array.isArray(body.ops) ? body.ops : [], cursor: String(body.cursor ?? cursor) };
     }
 
-    async pushMedia(hash: string, data: string): Promise<void> {
-        await this.send("media", { hash, data });
+    // false when this node doesn't keep files (a drop point answers 507 with noMedia)
+    async pushMedia(hash: string, data: string): Promise<boolean> {
+        const res = await fetch(this.base + "media", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ hash, data })
+        });
+        if (res.ok) return true;
+        const body = await res.json().catch(() => null) as { error?: string, noMedia?: boolean } | null;
+        if (res.status === 507 && body?.noMedia) return false;
+        throw new Error(body?.error ?? `media failed: ${res.status}`);
     }
 
     async info(): Promise<NodeInfo | null> {

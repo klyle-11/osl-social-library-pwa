@@ -2,7 +2,7 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import { computed, signal } from "@preact/signals";
 import { buildViews } from "../core/views";
-import type { LibraryStore } from "../core/store";
+import type { LibraryStore, NodeRole } from "../core/store";
 import type { Op, Presence } from "../core/types";
 import type { HttpTransport, Role } from "../adapters/http-transport";
 
@@ -24,6 +24,10 @@ export type SyncState = "starting" | "no-node" | "syncing" | "synced" | "offline
 export const syncState = signal<SyncState>("starting");
 export const lastSync = signal<string | null>(null);
 export const paused = signal(false);
+// which kind of node answered last: the library itself, or a drop point out in the neighbourhood
+export const nodeRole = signal<NodeRole>("library");
+// handed in at a drop point and not yet seen coming back from the library
+export const relayed = signal(0);
 
 // who is here right now, and what the big screen shows. Replaced whole on every poll.
 export const presence = signal<Presence>({ online: [], showing: null });

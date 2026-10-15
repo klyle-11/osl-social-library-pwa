@@ -35,9 +35,11 @@ class Store {
     size_t waiting() const { return fwd_.size(); }
     size_t bytes() const { return bytes_; }
 
-    // Calls fn for each op with seq in (since, upto] from the archive (and from phones if includePhone).
+    // Calls fn for each op with seq in (since, upto] from the archive (and from phones if
+    // includePhone), at most `limit` of them. Returns the seq it read up to: `upto`, or
+    // the last op handed out if the limit cut it short (the next call starts there).
     typedef void (*OpFn)(void* ctx, const char* json, size_t len);
-    void forEach(uint32_t since, uint32_t upto, bool includePhone, OpFn fn, void* ctx);
+    uint32_t forEach(uint32_t since, uint32_t upto, bool includePhone, OpFn fn, void* ctx, size_t limit = (size_t)-1);
 
     // Forwarding to the archive, strictly in order, one at a time.
     bool peekForward(uint32_t* seq, std::string* json);

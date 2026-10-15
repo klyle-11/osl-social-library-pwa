@@ -1,5 +1,5 @@
 import type { Op } from "../../core/types";
-import { lastSync, paused, pending, presence, syncState, useLibrary, views, viewer } from "../state";
+import { lastSync, nodeRole, paused, pending, presence, relayed, syncState, useLibrary, views, viewer } from "../state";
 import { when } from "../format";
 import { href } from "../route";
 import { syncNow } from "../sync";
@@ -10,7 +10,8 @@ const STATE_TEXT = {
     syncing: "Talking to the library…",
     synced: "Everything here has reached the library.",
     offline: "This device is offline. Your work is saved here and will send when you're back.",
-    paused: "Syncing is paused. Your work stays on this device until you resume."
+    paused: "Syncing is paused. Your work stays on this device until you resume.",
+    droppoint: "Handed in at a drop point. From here it goes on to the library by radio."
 };
 
 function summary(op: Op, title: (id: string) => string): string {
@@ -33,12 +34,16 @@ export function SyncScreen() {
     const v = views.value;
     const me = viewer.value;
     pending.value;      // re-render when the outbox changes
+    relayed.value;
     const byId = new Map(store.ops.map(o => [o.id, o]));
     const waiting = store.outbox.map(id => byId.get(id)).filter((o): o is Op => !!o);
+    const onTheWay = store.relayed.map(id => byId.get(id)).filter((o): o is Op => !!o);
+    const atDropPoint = nodeRole.value === "droppoint";
     const mine = store.ops.filter(o => o.user === me).length;
     const title = (id: string) => v.documents[id]?.properties.title ?? "a document";
     // "synced" describes the last exchange; with notes written since, they're on their way
-    const state = syncState.value === "synced" && waiting.length ? "syncing" : syncState.value;
+    const state = syncState.value === "synced" && waiting.length ? "syncing"
+        : syncState.value === "synced" && atDropPoint ? "droppoint" : syncState.value;
 
     return (
         <section class="sync-screen">
@@ -59,13 +64,13 @@ export function SyncScreen() {
                     <span class="sync-screen__stop-name">This device</span>
                     <span class="sync-screen__stop-count">{waiting.length} waiting to send</span>
                 </li>
-                <li class="sync-screen__stop sync-screen__stop--off">
+                <li class={`sync-screen__stop${atDropPoint && syncState.value === "synced" ? " sync-screen__stop--reached" : ""}${!atDropPoint && !onTheWay.length ? " sync-screen__stop--off" : ""}`}>
                     <span class="sync-screen__stop-name">Drop point</span>
-                    <span class="sync-screen__stop-count">no radio link in this build</span>
+                    <span class="sync-screen__stop-count">{onTheWay.length} on the way by radio</span>
                 </li>
-                <li class={`sync-screen__stop${syncState.value === "synced" ? " sync-screen__stop--reached" : ""}`}>
+                <li class={`sync-screen__stop${!atDropPoint && syncState.value === "synced" ? " sync-screen__stop--reached" : ""}`}>
                     <span class="sync-screen__stop-name">The library</span>
-                    <span class="sync-screen__stop-count">{presence.value.online.length} online</span>
+                    <span class="sync-screen__stop-count">{atDropPoint ? "out of reach from here" : `${presence.value.online.length} online`}</span>
                 </li>
             </ol>
 
@@ -74,8 +79,19 @@ export function SyncScreen() {
                 {waiting.length === 0
                     ? <p class="sync-screen__text">Nothing is waiting.</p>
                     : <ul class="sync-screen__list">{waiting.map(op => <li class="sync-screen__item" key={op.id}>{summary(op, title)}</li>)}</ul>}
-                {store.mediaOutbox.length > 0 && <p class="sync-screen__text">{store.mediaOutbox.length} photo{store.mediaOutbox.length === 1 ? "" : "s"} still to upload.</p>}
+                {store.mediaOutbox.length > 0 && <p class="sync-screen__text">
+                    {store.mediaOutbox.length} photo{store.mediaOutbox.length === 1 ? "" : "s"} still to upload
+                    {atDropPoint ? ": drop points don't keep files, so they go when you're at the library." : "."}
+                </p>}
             </section>
+
+            {onTheWay.length > 0 && (
+                <section class="sync-screen__section">
+                    <h3 class="sync-screen__heading">At a drop point, on the way to the library</h3>
+                    <p class="sync-screen__text">These have left your phone. Each one drops off this list when you next sync after the library has it, here or at the library.</p>
+                    <ul class="sync-screen__list">{onTheWay.map(op => <li class="sync-screen__item" key={op.id}>{summary(op, title)}</li>)}</ul>
+                </section>
+            )}
 
             <section class="sync-screen__section">
                 <h3 class="sync-screen__heading">On this device</h3>

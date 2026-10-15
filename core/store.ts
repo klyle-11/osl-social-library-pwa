@@ -4,6 +4,7 @@ import {
 } from "./ops";
 import { mergeOps } from "./merge";
 import { makeBundle, readBundle, type Bundle } from "./bundle";
+import { rememberCursor } from "./cursor";
 import type { Access, CollectionId, Conflict, DescribeField, DocumentProperties, Op, OpContext, OpId } from "./types";
 
 // One interface, one implementation per shell:
@@ -17,12 +18,26 @@ export interface StorageAdapter {
     getMedia(hash: string): Promise<string | undefined>;
 }
 
+// Which kind of node answered: the library (the Pi) keeps everything; a drop point
+// is an inbox that passes ops on to the library by radio.
+export type NodeRole = "library" | "droppoint";
+
+// What a node says to a push. `keep` lists ops it left with the phone (a drop point
+// whose flash is full, or an op too big for the radio): they stay in the outbox.
+export type PushReply = { keep: OpId[], role: NodeRole };
+
 // How ops move between this device and a node. HTTP now; a bundle file or radio later.
 export interface Transport {
-    pushOps(ops: Op[]): Promise<void>;
+    pushOps(ops: Op[]): Promise<PushReply>;
+    // `cursor` is every cursor this device holds, comma-separated (see cursor.ts)
     pullOps(cursor: string): Promise<{ ops: unknown[], cursor: string }>;
-    pushMedia(hash: string, data: string): Promise<void>;
+    // false: this node doesn't keep files (a drop point), so the file waits for the library
+    pushMedia(hash: string, data: string): Promise<boolean>;
 }
+
+// Ops per request are capped by size, so a drop point's small memory can take them.
+// One op bigger than this still goes, alone.
+export const PUSH_BATCH_BYTES = 8000;
 
 // The outside world, passed in so the core never reads a clock or randomness itself.
 export type StoreEnv = {
@@ -45,6 +60,8 @@ export class LibraryStore {
     user = "";
     outbox: OpId[] = [];
     mediaOutbox: string[] = [];
+    // handed in at a drop point, not yet seen coming back from the library
+    relayed: OpId[] = [];
 
     private seq = 0;
     private listeners = new Set<() => void>();
@@ -80,6 +97,7 @@ export class LibraryStore {
         this.seq = seq;
         this.outbox = parseList(await this.storage.getMeta("outbox"));
         this.mediaOutbox = parseList(await this.storage.getMeta("mediaOutbox"));
+        this.relayed = parseList(await this.storage.getMeta("relayed"));
 
         this.setOps(mergeOps(seedOps, stored));
     }
@@ -180,25 +198,59 @@ export class LibraryStore {
         // media first, so an op never arrives before the photo it points at
         for (const hash of [...this.mediaOutbox]) {
             const data = await this.storage.getMedia(hash);
-            if (data) await transport.pushMedia(hash, data);
+            if (data && !(await transport.pushMedia(hash, data))) break;   // no files here: they wait
             this.mediaOutbox = this.mediaOutbox.filter(h => h !== hash);
             await this.storage.setMeta("mediaOutbox", JSON.stringify(this.mediaOutbox));
         }
 
-        const sending = [...this.outbox];
+        // an op pointing at a file that is still waiting waits with it
+        const waitingFiles = new Set(this.mediaOutbox);
         const byId = new Map(this.ops.map(o => [o.id, o]));
-        const ops = sending.map(id => byId.get(id)).filter((o): o is Op => !!o);
-        if (ops.length) await transport.pushOps(ops);
-        // only clear what was sent; anything committed meanwhile stays queued
-        this.outbox = this.outbox.filter(id => !sending.includes(id));
-        await this.storage.setMeta("outbox", JSON.stringify(this.outbox));
+        const orphans = this.outbox.filter(id => !byId.has(id));
+        const ops = this.outbox.map(id => byId.get(id))
+            .filter((o): o is Op => !!o && !(o.type === "document" && !!o.hash && waitingFiles.has(o.hash)));
+        if (orphans.length) await this.saveOutbox(this.outbox.filter(id => !orphans.includes(id)));
 
-        const cursor = (await this.storage.getMeta("cursor")) ?? "";
-        const pulled = await transport.pullOps(cursor);
+        let sent = 0;
+        for (const batch of batches(ops, PUSH_BATCH_BYTES)) {
+            const reply = await transport.pushOps(batch);
+            const keep = new Set(reply.keep);
+            const taken = batch.map(o => o.id).filter(id => !keep.has(id));
+            sent += taken.length;
+            // only clear what was taken; anything committed meanwhile stays queued
+            await this.saveOutbox(this.outbox.filter(id => !taken.includes(id)));
+            if (reply.role === "droppoint") {
+                this.relayed = [...this.relayed, ...taken.filter(id => !this.relayed.includes(id))];
+                await this.storage.setMeta("relayed", JSON.stringify(this.relayed));
+            }
+        }
+
+        const cursors = await this.loadCursors();
+        const pulled = await transport.pullOps(cursors.join(","));
+        // An op that comes back from a node has reached the library: drop points only
+        // hand out what came to them from the library.
+        const back = new Set(pulled.ops.map(o => (o as { id?: unknown } | null)?.id).filter(id => typeof id === "string"));
+        if (this.relayed.some(id => back.has(id))) {
+            this.relayed = this.relayed.filter(id => !back.has(id));
+            await this.storage.setMeta("relayed", JSON.stringify(this.relayed));
+        }
         const { added } = await this.importOps(pulled.ops);
-        await this.storage.setMeta("cursor", pulled.cursor);
+        await this.storage.setMeta("cursors", JSON.stringify(rememberCursor(cursors, pulled.cursor)));
         if (!added) this.notify();   // outbox changed even if nothing new arrived
-        return { sent: ops.length, received: added };
+        return { sent, received: added };
+    }
+
+    private async saveOutbox(outbox: OpId[]) {
+        this.outbox = outbox;
+        await this.storage.setMeta("outbox", JSON.stringify(outbox));
+    }
+
+    // one cursor per node; a device from before that kept a single "cursor"
+    private async loadCursors(): Promise<string[]> {
+        const list = parseList(await this.storage.getMeta("cursors"));
+        if (list.length) return list;
+        const old = await this.storage.getMeta("cursor");
+        return old ? [old] : [];
     }
 
     // merge ops from elsewhere (the node, or a bundle file)
@@ -275,6 +327,32 @@ export class LibraryStore {
     private notify() {
         for (const fn of this.listeners) fn();
     }
+}
+
+// Splits ops into requests of at most `maxBytes` of JSON (as UTF-8), in order.
+export function batches(ops: Op[], maxBytes: number): Op[][] {
+    const out: Op[][] = [];
+    let batch: Op[] = [], size = 2;
+    for (const op of ops) {
+        const n = utf8Length(JSON.stringify(op)) + 1;
+        if (batch.length && size + n > maxBytes) { out.push(batch); batch = []; size = 2; }
+        batch.push(op);
+        size += n;
+    }
+    if (batch.length) out.push(batch);
+    return out;
+}
+
+function utf8Length(s: string): number {
+    let n = 0;
+    for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i);
+        if (c < 0x80) n += 1;
+        else if (c < 0x800) n += 2;
+        else if (c >= 0xd800 && c <= 0xdbff) { n += 4; i++; }   // a surrogate pair is one 4-byte character
+        else n += 3;
+    }
+    return n;
 }
 
 function parseList(raw: string | undefined): string[] {

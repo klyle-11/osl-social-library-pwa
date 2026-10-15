@@ -4,7 +4,7 @@ import type { HttpTransport } from "../adapters/http-transport";
 import { carry } from "../adapters/carry";
 import { fileUrl } from "./format";
 import { href, route } from "./route";
-import { follow, lastSync, paused, pending, presence, syncState, views, viewer } from "./state";
+import { follow, lastSync, nodeRole, paused, pending, presence, relayed, syncState, views, viewer } from "./state";
 
 // How often an open, visible app asks the node what's new. Short enough that a
 // note appears on the big screen while people are still looking at it.
@@ -42,6 +42,7 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
         if (syncState.value !== "synced") syncState.value = "syncing";
         try {
             await store.sync(transport);
+            nodeRole.value = transport.role;
             syncState.value = "synced";
             lastSync.value = new Date().toISOString();
             failures = 0;
@@ -51,6 +52,7 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
             failures++;
         }
         pending.value = store.outbox.length;
+        relayed.value = store.relayed.length;
         // back off while the node is unreachable, so a phone that left isn't hammering the air
         timer = setTimeout(run, Math.min(TICK_MS * 2 ** failures, SLOWEST_MS));
     };
@@ -59,6 +61,7 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
 
     store.subscribe(() => {
         pending.value = store.outbox.length;
+        relayed.value = store.relayed.length;
         if (store.outbox.length || store.mediaOutbox.length) soon();
     });
     addEventListener("online", soon);

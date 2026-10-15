@@ -1,14 +1,14 @@
 // Drop point (gate seven, step B + C): the ESP32-S3 out in the neighbourhood.
 //
-//  - Runs a Wi-Fi network and answers every DNS name with itself, so
-//    https://LIBRARY_DOMAIN reaches this board when there is no internet.
-//  - Serves the app and the same /sync endpoint as the archive, over HTTPS with
-//    the archive's name and certificate (web.cpp).
+//  - Runs a Wi-Fi network and answers every DNS name with itself, and takes the
+//    library's own address (config.h), so a phone reaches this board exactly where
+//    it would reach the library: same address, same app, same saved work.
+//  - Serves the app and the library's /api/ops (web.cpp, osl::Api).
 //  - Stores phones' ops in flash (write-only inbox) and forwards them to the
-//    archive over LoRa, one at a time, deleting nothing until the archive says
+//    library over LoRa, one at a time, deleting nothing until the library says
 //    the op is durable.
-//  - Receives the archive's moderated ops over LoRa (the return path) and hands
-//    only those out to phones.
+//  - Receives the library's ops over LoRa (the return path) and hands only those
+//    out to phones: an op coming back tells a phone it reached the library.
 
 #include <Arduino.h>
 #include <DNSServer.h>
@@ -22,10 +22,13 @@
 #include "droppoint.h"
 #include "lora_io.h"
 #include "osl_link.h"
-#include "osl_sync.h"
+#include "osl_ops.h"
 
-osl::Store store;
-String nodeId;
+static osl::Store store;
+static osl::Presence presence;
+static osl::Api* theApi = nullptr;
+static String nodeId;   // "drop-a1b2c3": also the log id in this drop point's cursors
+static String address;  // where phones reach the library (and so this board)
 
 static SemaphoreHandle_t storeMutex;
 StoreLock::StoreLock() { xSemaphoreTake(storeMutex, portMAX_DELAY); }
@@ -38,9 +41,12 @@ static bool radioOk = false;
 static uint32_t fwdMsg = 0, fwdSeq = 0;
 static uint32_t receivedFromArchive = 0, forwardedToArchive = 0;
 
+osl::Api& api() { return *theApi; }
+const char* libraryAddress() { return address.c_str(); }
+
 // ---- spam guard: ops per author per hour (called from the web task, under StoreLock) ----
 
-bool allowAuthor(void*, const char* author) {
+static bool allowAuthor(void*, const char* author) {
     static std::map<std::string, std::pair<uint32_t, uint32_t>> seen;  // author -> (window start, count)
     if (!author) return false;
     uint32_t now = millis();
@@ -50,7 +56,7 @@ bool allowAuthor(void*, const char* author) {
     return ++e.second <= OPS_PER_AUTHOR_PER_HOUR;
 }
 
-void fillStatus(JsonDocument& d) {
+static void fillStatus(JsonDocument& d) {
     const osl::LinkStats& s = radioLink.stats();
     d["node"] = nodeId;
     d["role"] = "droppoint";
@@ -64,6 +70,7 @@ void fillStatus(JsonDocument& d) {
     d["flashFree"] = LittleFS.totalBytes() - LittleFS.usedBytes();
     d["heapFree"] = ESP.getFreeHeap();
     d["phonesConnected"] = WiFi.softAPgetStationNum();
+    d["phonesUsingTheApp"] = presence.count(millis());
     d["uptimeSec"] = millis() / 1000;
     JsonObject r = d["radio"].to<JsonObject>();
     r["ok"] = radioOk;
@@ -76,16 +83,26 @@ void fillStatus(JsonDocument& d) {
     r["polls"] = s.polls;
 }
 
+// /api/status (called by osl::Api from the web task, holding StoreLock)
+static void writeStatus(void*, osl::Writer& w) {
+    JsonDocument d;
+    fillStatus(d);
+    std::string out;
+    serializeJson(d, out);
+    w.write(out.data(), out.size());
+}
+
 // ---- radio: ops from the archive ----
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
     if (len < 2 || data[0] != KIND_OP) {
+        Serial.println("dropped a radio message of an unknown kind");
         radioLink.markDurable(msgId);
         return;
     }
     JsonDocument doc;
     if (deserializeJson(doc, (const char*)data + 1, len - 1) || osl::validateOp(doc.as<JsonObjectConst>())) {
-        Serial.println("dropped an invalid op from the archive");
+        Serial.println("dropped an invalid op from the library");
         radioLink.markDurable(msgId);  // nothing useful to keep; stop the retries
         return;
     }
@@ -100,7 +117,7 @@ static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
         receivedFromArchive++;
         radioLink.markDurable(msgId);
     } else {
-        Serial.println("could not store an op from the archive (flash full?); it will be resent");
+        Serial.println("could not store an op from the library (flash full?); it will be resent");
     }
 }
 
@@ -153,11 +170,30 @@ void setup() {
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, strlen(AP_PASSWORD) ? AP_PASSWORD : nullptr, AP_CHANNEL, 0, AP_MAX_CLIENTS);
+#if LIBRARY_HTTPS
+    address = String("https://") + LIBRARY_DOMAIN;
+#else
+    // this network takes the library's own address, so the app's address is the same here
+    IPAddress ip;
+    if (ip.fromString(LIBRARY_ADDRESS)) WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
+    else Serial.println("LIBRARY_ADDRESS in config.h is not an IP address");
+    address = String("http://") + LIBRARY_ADDRESS + (LIBRARY_PORT == 80 ? "" : ":" + String(LIBRARY_PORT));
+#endif
     dns.setErrorReplyCode(DNSReplyCode::NoError);
-    dns.start(53, "*", WiFi.softAPIP());  // every name, including LIBRARY_DOMAIN, is this board
-    Serial.printf("Wi-Fi \"%s\" up; https://%s/ -> %s\n", AP_SSID, LIBRARY_DOMAIN, WiFi.softAPIP().toString().c_str());
+    dns.start(53, "*", WiFi.softAPIP());  // every name is this board
+    Serial.printf("Wi-Fi \"%s\" up; %s -> %s\n", AP_SSID, address.c_str(), WiFi.softAPIP().toString().c_str());
 
-    if (!webStart()) Serial.println("web server failed to start (missing /tls/cert.pem or /tls/key.pem? run uploadfs)");
+    static osl::ApiConfig cfg;
+    cfg.nodeId = nodeId.c_str();
+    cfg.address = address.c_str();
+    cfg.secure = LIBRARY_HTTPS;
+    cfg.maxOpBytes = osl::MAX_OP_BYTES;
+    cfg.allow = allowAuthor;
+    cfg.status = writeStatus;
+    theApi = new osl::Api(store, presence, cfg);
+
+    if (!webStart()) Serial.println(LIBRARY_HTTPS ? "web server failed to start (missing /tls/cert.pem or /tls/key.pem? run uploadfs)"
+                                                  : "web server failed to start");
 
     radioOk = io.begin();
     if (!radioOk) Serial.printf("radio init failed (%d): check pins in config.h\n", io.lastError());

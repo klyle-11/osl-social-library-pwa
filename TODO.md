@@ -21,6 +21,8 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 
 ## Device and network testing (the demo)
 
+- [ ] Give the Pi a fixed address on the router (a DHCP reservation). The address is the app's origin: if it changes, every phone opens an empty app (W-D10).
+
 - [ ] `npm run rehearse` passes (28 checks, headless; on the Pi set `CHROME=/usr/bin/chromium`). It covers the notes, presence, presenter, offline, pause, node-restart, clean-start and ten-devices items below without real devices; do them for real anyway, since what it can't see is Safari, Wi-Fi and people.
 - [ ] `npm start`; open the big screen on the laptop or Pi.
 - [ ] iPhone (Safari) and Android (Chrome) on the same Wi-Fi: open the address, read, post a note.
@@ -49,10 +51,12 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 
 ## After that
 
-- [ ] Port the drop point firmware to this branch's op format and `/api/ops`.
-- [ ] Pi-side radio bridge in `node/`.
+- [x] Port the drop point firmware to this branch's op format and `/api/ops` (rehearsed on a computer: `npm run rehearse:radio`).
+- [ ] Build the drop point for a board (`pio run -e droppoint-xiao-s3`) and fix what the compiler finds in `src/droppoint/`.
+- [ ] Set `LIBRARY_ADDRESS` and `LIBRARY_PORT` in `firmware/include/config.h` to the Pi's fixed address; flash a drop point; walk a phone out to it.
+- [x] Pi-side radio bridge in `node/` (`node/radio.ts`, `RADIO_PORT`).
 - [ ] Addresses and relaying, so more than two boards can share the air.
-- [ ] Sync screen: the drop-point stop becomes real.
+- [x] Sync screen: the drop-point stop becomes real.
 - [ ] Omeka export of documents with their notes as private items (which Omeka?).
 - [ ] `kiwix-serve` beside the library for ZIM archives.
 - [ ] NFC tag for first pickup; redeem roles inside the installed app.

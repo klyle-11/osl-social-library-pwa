@@ -5,12 +5,24 @@
 //     - node/ or core/ change     -> rebuild and restart the node, reload pages
 //     - library/ change           -> re-run the catalog, copy files, reload pages
 import * as esbuild from "esbuild";
-import { cpSync, existsSync, mkdirSync, rmSync, watch as watchFs } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, watch as watchFs } from "node:fs";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { buildCatalog } from "./catalog.mjs";
 
 const watch = process.argv.includes("--watch");
-const version = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+
+// The service worker's version is a hash of the app it caches, so the same sources
+// always give the same version. A drop point carries a copy of this build: if the Pi
+// rebuilt with a new version on every start, phones moving between the two would
+// switch versions each time (README, W-D10). In dev, every rebuild is new.
+const SHELL = ["index.html", "app.js", "styles.css", "manifest.webmanifest", "catalog.json"];
+function shellVersion() {
+    if (watch) return new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+    const h = createHash("sha256");
+    for (const f of SHELL) h.update(f + "\0").update(readFileSync(`dist/${f}`));
+    return h.digest("hex").slice(0, 12);
+}
 
 rmSync("dist", { recursive: true, force: true });
 mkdirSync("dist", { recursive: true });
@@ -35,18 +47,19 @@ const app = {
     entryPoints: ["app/index.tsx"], bundle: true, outfile: "dist/app.js",
     format: "esm", target: "es2020", minify: !watch, sourcemap: true, logLevel: "info", define
 };
-const sw = {
+const sw = () => ({
     entryPoints: ["app/sw.ts"], bundle: true, outfile: "dist/sw.js",
     format: "iife", target: "es2020", minify: !watch, logLevel: "info",
-    define: { OSL_VERSION: JSON.stringify(version) }
-};
+    define: { OSL_VERSION: JSON.stringify(shellVersion()) }
+});
 const server = {
     entryPoints: ["node/server.ts"], bundle: true, outfile: "dist-node/server.mjs",
     platform: "node", format: "esm", target: "node20", logLevel: "info"
 };
 
 if (!watch) {
-    await Promise.all([esbuild.build(app), esbuild.build(sw), esbuild.build(server)]);
+    await Promise.all([esbuild.build(app), esbuild.build(server)]);
+    await esbuild.build(sw());   // after the app: its version is the app's hash
 } else {
     let node = null;
     const reload = () => node?.connected && node.send({ type: "reload" });
@@ -77,7 +90,7 @@ if (!watch) {
     await serverCtx.watch();
 
     await (await esbuild.context({ ...app, plugins: [onBuilt("reload", reload)] })).watch();
-    await (await esbuild.context(sw)).watch();
+    await (await esbuild.context(sw())).watch();
 
     // documents: drop a file in library/files or edit documents.json
     let timer;

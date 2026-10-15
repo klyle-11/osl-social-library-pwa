@@ -50,10 +50,18 @@
 #error "Pick a board in platformio.ini (BOARD_HELTEC_V3, BOARD_LILYGO_T3S3 or BOARD_XIAO_S3_WIO) or add its pins here"
 #endif
 
-// ---------- Drop point ----------
-// The library's address. It MUST be the same name (and port 443) as the archive
-// node, with the same certificate: phones keep their data per address, so a
-// different name would look like a different app with an empty outbox.
+// ---------- Drop point: the library's address ----------
+// Phones keep their data per address (scheme, name and port), so a drop point must
+// answer at exactly the address phones use for the library, or it looks like a
+// different, empty app (README, W-D10).
+//   LIBRARY_HTTPS 0: before the domain. Plain http at the Pi's fixed address and port.
+//                    The drop point's own Wi-Fi network takes that address, so phones
+//                    joined to it reach the board where they'd reach the Pi.
+//   LIBRARY_HTTPS 1: https://LIBRARY_DOMAIN on port 443, with the library's certificate
+//                    in flash (Gate three).
+#define LIBRARY_HTTPS 0
+#define LIBRARY_ADDRESS "192.168.1.50"   // the Pi's fixed address (a DHCP reservation on the router)
+#define LIBRARY_PORT 8080                // the port the node runs on (PORT, 8080 by default)
 #define LIBRARY_DOMAIN "library.example.org"
 
 #define AP_SSID "OSL Library"
@@ -63,5 +71,4 @@
 
 #define OPS_RESERVE_BYTES (64 * 1024)  // flash kept free; the op log may use the rest (~1 MB = ~3000 ops)
 #define OPS_PER_AUTHOR_PER_HOUR 300  // spam guard per device
-#define SHARE_LOCAL_CONTRIBUTIONS 0  // 1 = phones here see each other's ops before the archive approves them
-#define SYNC_MAX_BODY (16 * 1024)    // largest /sync request accepted (the app sends batches of 10 ops)
+#define API_MAX_BODY (32 * 1024)     // largest request accepted (the app sends ops in batches of about 8 KB)

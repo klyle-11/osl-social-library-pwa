@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LibraryStore, type Transport } from "../store";
+import { LibraryStore, PUSH_BATCH_BYTES, batches, type Transport } from "../store";
+import { positionFor } from "../cursor";
 import { MemoryStorage } from "../../adapters/memory-storage";
 import { buildViews } from "../views";
 import { validateOp } from "../ops";
@@ -12,14 +13,38 @@ function env(id: string) {
     return { now: () => new Date(t += 1000).toISOString(), newDeviceId: () => id };
 }
 
-// an in-memory node: arrival-ordered log, cursor = position
-function fakeNode(): Transport & { log: Op[] } {
+// an in-memory library node: arrival-ordered log, cursor = "<log id>.<position>"
+function fakeNode(logId = "lib"): Transport & { log: Op[], media: string[] } {
     const log: Op[] = [];
+    const media: string[] = [];
     return {
-        log,
-        async pushOps(ops) { for (const op of ops) if (!log.some(o => o.id === op.id)) log.push(op); },
-        async pullOps(cursor) { return { ops: log.slice(Number(cursor) || 0), cursor: String(log.length) }; },
-        async pushMedia() {}
+        log, media,
+        async pushOps(ops) {
+            for (const op of ops) if (!log.some(o => o.id === op.id)) log.push(op);
+            return { keep: [], role: "library" };
+        },
+        async pullOps(after) {
+            return { ops: log.slice(positionFor(after, logId, log.length)), cursor: `${logId}.${log.length}` };
+        },
+        async pushMedia(hash) { media.push(hash); return true; }
+    };
+}
+
+// a drop point: takes ops into an inbox, takes no files, hands out only what came from the library
+function fakeDropPoint(opts: { keepIds?: string[] } = {}): Transport & { inbox: Op[], fromLibrary: Op[], pushes: number[] } {
+    const inbox: Op[] = [], fromLibrary: Op[] = [], pushes: number[] = [];
+    return {
+        inbox, fromLibrary, pushes,
+        async pushOps(ops) {
+            pushes.push(ops.length);
+            const keep = ops.map(o => o.id).filter(id => opts.keepIds?.includes(id));
+            for (const op of ops) if (!keep.includes(op.id) && !inbox.some(o => o.id === op.id)) inbox.push(op);
+            return { keep, role: "droppoint" };
+        },
+        async pullOps(after) {
+            return { ops: fromLibrary.slice(positionFor(after, "drop-1", fromLibrary.length)), cursor: `drop-1.${fromLibrary.length}` };
+        },
+        async pushMedia() { return false; }
     };
 }
 
@@ -87,7 +112,7 @@ test("a failed push keeps everything queued", async () => {
     const broken: Transport = {
         async pushOps() { throw new Error("offline"); },
         async pullOps(c) { return { ops: [], cursor: c }; },
-        async pushMedia() {}
+        async pushMedia() { return true; }
     };
     await assert.rejects(s.sync(broken));
     assert.equal(s.outbox.length, 1);
@@ -115,4 +140,74 @@ test("invalid ops from outside are rejected, not merged", async () => {
     const r = await s.importOps([{ id: "x", type: "annotation" }, { id: "d-z:1", user: "d-q", type: "hide", target: "a", timestamp: "2026-10-04T12:00:00Z" }]);
     assert.equal(r.added, 0);
     assert.equal(r.rejected, 2);
+});
+
+const PHOTO = "sha256-" + "1".repeat(64);
+
+test("at a drop point: notes go, a photo and its document wait for the library", async () => {
+    const s = new LibraryStore(new MemoryStorage(), env("d-a"));
+    await s.open();
+    await s.putMedia(PHOTO, "data:image/jpeg;base64,AAAA");
+    const photoDoc = await s.addDocument({ fileType: "image/jpeg", hash: PHOTO, properties: { title: "Corner store", author: "", type: "photo" } });
+    const note = await s.annotate("steward:1", "written out in the field", "public");
+
+    const drop = fakeDropPoint();
+    await s.sync(drop);
+    assert.deepEqual(drop.inbox.map(o => o.id), [note]);
+    assert.deepEqual(s.outbox, [photoDoc], "the photo's document waits with the photo");
+    assert.deepEqual(s.mediaOutbox, [PHOTO]);
+    assert.deepEqual(s.relayed, [note], "the note is at the drop point, on its way");
+
+    // the library sends the note back out to the drop point: it has arrived
+    drop.fromLibrary.push(drop.inbox[0]);
+    await s.sync(drop);
+    assert.deepEqual(s.relayed, []);
+
+    // at the library: the photo goes first, then its document
+    const lib = fakeNode();
+    await s.sync(lib);
+    assert.deepEqual(lib.media, [PHOTO]);
+    assert.deepEqual(lib.log.map(o => o.id), [photoDoc]);
+    assert.deepEqual(s.outbox, []);
+});
+
+test("an op a drop point leaves with the phone stays in the outbox", async () => {
+    const s = new LibraryStore(new MemoryStorage(), env("d-a"));
+    await s.open();
+    const a = await s.annotate("steward:1", "one", "public");
+    const b = await s.annotate("steward:1", "two", "public");
+    await s.sync(fakeDropPoint({ keepIds: [b] }));
+    assert.deepEqual(s.outbox, [b]);
+    assert.deepEqual(s.relayed, [a]);
+});
+
+test("pushes are batched by size, and a lone big op still goes", async () => {
+    const s = new LibraryStore(new MemoryStorage(), env("d-a"));
+    await s.open();
+    for (let i = 0; i < 30; i++) await s.annotate("steward:1", "x".repeat(600), "public");
+    const drop = fakeDropPoint();
+    await s.sync(drop);
+    assert.ok(drop.pushes.length > 1, `${drop.pushes.length} requests`);
+    assert.equal(drop.pushes.reduce((a, b) => a + b, 0), 30);
+    assert.equal(s.outbox.length, 0);
+
+    const big = { id: "d-a:99", type: "annotation", user: "d-a", timestamp: "2026-10-04T12:00:00Z", target: "x", body: "é".repeat(5000), access: "public" } as Op;
+    assert.deepEqual(batches([big], PUSH_BATCH_BYTES).map(b => b.length), [1]);
+});
+
+test("one cursor per node: moving between the library and a drop point re-reads neither", async () => {
+    const s = new LibraryStore(new MemoryStorage(), env("d-a"));
+    await s.open();
+    const lib = fakeNode();
+    const other = new LibraryStore(new MemoryStorage(), env("d-b"));
+    await other.open();
+    await other.annotate("steward:1", "from b", "public");
+    await other.sync(lib);
+
+    let asked: string[] = [];
+    const spy = (t: Transport): Transport => ({ ...t, pullOps: c => { asked.push(c); return t.pullOps(c); } });
+    await s.sync(spy(lib));
+    await s.sync(spy(fakeDropPoint()));
+    await s.sync(spy(lib));
+    assert.deepEqual(asked, ["", "lib.1", "drop-1.0,lib.1"]);
 });

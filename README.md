@@ -31,7 +31,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Sync screen: waiting to send, pause, sync now | Works |
 | Storage in IndexedDB; save and load your work as a file | Works |
 | Offline install and offline reopening on phones | **Needs the domain** (works on `localhost` only) |
-| Radio link | Firmware present; bench test only (see below) |
+| Radio link and drop point | Rehearsed on a computer (`npm run rehearse:radio`); drop point not yet built for the boards (see below) |
 | Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
 
 Checked with 29 core tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices. It has **not** been run on a real phone or on the Pi yet.
@@ -56,6 +56,10 @@ The node prints its addresses and a **pairing code**:
 | `npm run check` | Type-check app, core and service worker |
 | `npm test` | Core tests |
 | `npm run rehearse` | Rehearse the device tests in headless Chrome against a scratch node (about three minutes; leaves `data/` alone) |
+| `npm run rehearse:radio` | Rehearse gate seven: the library, a drop point and the radio, from the firmware's own code (Linux, macOS) |
+| `npm run test:firmware` | The firmware's tests, on this computer |
+| `npm run build:firmware` | Build, then put the app into `firmware/data/` for a drop point |
+| `RADIO_PORT=/dev/ttyACM0 npm start` | Run the node with the LoRa modem plugged in |
 | `npm run catalog` | Rebuild the catalog after adding files to `library/files/` |
 | `PORT=9000 npm start` | Use another port |
 | `OSL_CODE=123456 npm start` | Fix the pairing code instead of a random one |
@@ -89,13 +93,13 @@ Nothing in the list above needs it. You need the domain for the next step only:
 
 After that phones can install the app and reopen it offline. Until then they can use it live on the Wi-Fi, and `localhost` on a laptop shows the offline behaviour.
 
-## Radio: what is ready tonight
+## Radio and drop points
 
-- `firmware/` now builds for the **LilyGO T3-S3** and the **Seeed XIAO ESP32S3 + Wio-SX1262 kit**, as well as the Heltec V3.
-- Boards of different makes can talk to each other; they share the same radio chip and settings.
-- **Ready:** a bench test of the radio link between two boards, using the modem build on both. See [TODO.md](TODO.md).
-- **Not ready:** the drop point. Its build does not compile yet (an include clash in `src/droppoint/web.cpp`). It also serves the app and syncs in the format of the `esp32-lora` branch, not this one, and it expects the certificate. It needs fixing and porting before phones can use a drop point with this app.
-- **Not ready:** more than two boards on the air at once. Frames carry no addresses yet, so a third board would confuse the other two. That is the relay work.
+- `firmware/` builds the **modem** for the LilyGO T3-S3, the XIAO ESP32S3 + Wio-SX1262 kit and the Heltec V3. Boards of different makes can talk to each other.
+- **Ready for the bench:** two modems and `scripts/radio-test.mjs`. Fixed in 0cd8cee: the modem was sending every op without its kind byte, so the other board dropped it; the bench test would have shown 0 arrived.
+- **Drop point, ported to this branch:** it serves the app and the library's own `/api/ops` at the library's address (W-D10), keeps phones' notes in flash, and sends them to the Pi by radio; the Pi sends its notes back out. A phone's Sync screen shows notes "on the way by radio" until they come back from the library. The Pi's side is `node/radio.ts`, started with `RADIO_PORT`.
+- **Tested on a computer, not on boards:** `npm run rehearse:radio` runs the drop point's and the modem's code with a pretend radio, and walks phones in headless Chrome from the library to the drop point and back (17 checks). The drop point's board layer (`web.cpp`, `main.cpp`) has not been through the ESP32 compiler since the port: this session couldn't download it. See `firmware/README.md`.
+- **Not ready:** more than one drop point. Frames carry no addresses yet; that is the relay work.
 
 ## Decisions on this branch
 
@@ -108,6 +112,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - **W-D7. Roles come from a pairing code** on the node's own screen. Several presenters, one digitization station.
 - **W-D8. Custom LoRa firmware, ops only.** The Pi is the only home node; drop points are ESP32-only; secondary drop points will relay through the main one. Not compatible with Meshtastic.
 - **W-D9. Sync is managed inside the app** (the Sync screen), not a separate app.
+- **W-D10. People get the app at the Pi; drop points are for syncing.** The Pi has the library, the files, pairing and the big screen; a drop point is a write-only inbox with 1.5 MB of flash. Both answer at the **same address** (phones keep their data per address), and a drop point always carries the **exact build the Pi serves**: a phone moving between two different builds would switch app versions each time. Before the domain, that address is the Pi's fixed IP and port over plain http, which a drop point can take on its own Wi-Fi network; after it, the domain over HTTPS.
 - **Hardware:** Raspberry Pi 5; one LilyGO T3-S3 v1.3 (SX1262); three Seeed XIAO ESP32S3 with Wio-SX1262; all 915 MHz.
 
 **Open:** which domain; Omeka S or Classic; what else the Sync screen should control; whether a Waveshare board joins (needs its model to add pins); the marginalia engine, put off, questions M1–M8 in [docs/marginalia-engine-decisions.md](docs/marginalia-engine-decisions.md).

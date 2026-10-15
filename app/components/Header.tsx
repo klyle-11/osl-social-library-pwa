@@ -1,4 +1,4 @@
-import { medium, pending, presence, query, syncState, views, viewer } from "../state";
+import { medium, nodeRole, pending, presence, query, syncState, views, viewer } from "../state";
 import { MEDIUMS, displayName } from "../format";
 import { href, route, type Route } from "../route";
 
@@ -23,6 +23,7 @@ export function Header() {
     const current = route.value.view;
     const waiting = pending.value;
     const online = presence.value.online;
+    const atDropPoint = nodeRole.value === "droppoint" && syncState.value === "synced";
     // only offer kinds the library actually holds
     const kinds = MEDIUMS.filter(([value]) => value && Object.values(v.documents).some(d => d.properties.type === value));
 
@@ -70,7 +71,7 @@ export function Header() {
                         {online.length} online
                     </summary>
                     <ul class="header__online-list">
-                        {online.length === 0 && <li class="header__online-item">Nobody is connected to the library right now.</li>}
+                        {online.length === 0 && <li class="header__online-item">{atDropPoint ? "Nobody else is at this drop point." : "Nobody is connected to the library right now."}</li>}
                         {online.map(p => (
                             <li class="header__online-item" key={p.user}>
                                 {displayName(p.user, v.names, me)}
@@ -82,7 +83,7 @@ export function Header() {
                     </ul>
                 </details>
                 <a class={`header__sync header__sync--${syncState.value}`} href={href({ view: "sync" })} role="status">
-                    {SYNC_TEXT[syncState.value]}
+                    {atDropPoint ? "At a drop point" : SYNC_TEXT[syncState.value]}
                     {waiting > 0 && <span class="header__pending"> · {waiting} waiting</span>}
                 </a>
                 <a class={`header__you${current === "you" ? " header__link--active" : ""}`} href={href({ view: "you" })}>

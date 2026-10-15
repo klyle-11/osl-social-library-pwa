@@ -55,3 +55,14 @@ test("key order doesn't make a conflict", () => {
     const reordered = JSON.parse(JSON.stringify(A[1], Object.keys(A[1]).reverse())) as Op;
     assert.equal(mergeOps(A, [reordered]).conflicts.length, 0);
 });
+
+// The same cases are checked by the drop point's firmware (firmware/test/node_test.cpp),
+// so the two can't drift apart about what a valid op is.
+import validation from "../fixtures/validation.json";
+import { validateOp as validateShared } from "../ops";
+
+test("shared validation fixtures", () => {
+    for (const c of validation as { case: string, op: unknown, valid: boolean }[]) {
+        assert.equal(validateShared(c.op).ok, c.valid, c.case);
+    }
+});
