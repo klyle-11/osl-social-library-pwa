@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { nodeRole, tokens, useLibrary, useTransport, views } from "../state";
+import { nodeRole, useLibrary, useTransport, views } from "../state";
 
 // What the PDF and EPUB readers share: where you were, the toolbar, and full screen.
 
@@ -72,7 +72,7 @@ export function useThumbnailBackfill(docId: string, ready: boolean, make: () => 
         (async () => {
             const small = await maker.current();
             if (!small) return;
-            const saved = await transport.upload(new File([small], "thumbnail.jpg", { type: "image/jpeg" }), tokens.value.station ?? null, () => {});
+            const saved = await transport.upload(new File([small], "thumbnail.jpg", { type: "image/jpeg" }), () => {});
             await store.describe(docId, { thumbnail: saved.hash });
         })().catch(() => { /* offline or refused: the gallery keeps its tile */ });
     }, [docId, ready]);

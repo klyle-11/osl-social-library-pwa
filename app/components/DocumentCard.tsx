@@ -24,7 +24,7 @@ export function DocumentCard({ id, onRemove }: { id: string, onRemove?: () => vo
                     {notes > 0 && ` · ${notes} note${notes === 1 ? "" : "s"}`}
                 </p>
                 <p class="document-card__added">
-                    Added by <span class="mark">{displayName(doc.user, v.names, viewer.value)}</span> · <time dateTime={doc.timestamp}>{when(doc.timestamp)}</time>
+                    Added by <span class="mark">{displayName(doc.user, v, viewer.value)}</span> · <time dateTime={doc.timestamp}>{when(doc.timestamp)}</time>
                 </p>
                 {(onScreen || viewing > 0) && (
                     <p class="document-card__live">

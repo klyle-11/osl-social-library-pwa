@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import type { Access } from "../../core/types";
 import type { AnnotationView } from "../../core/views";
-import { attempt, stewards, useLibrary, views, viewer } from "../state";
+import { attempt, isMe, isSteward, useLibrary, viewer, views } from "../state";
 import { displayName, when } from "../format";
 
 const MAX_PROMPTS = 8;
@@ -30,11 +30,11 @@ export function AnnotationThread({ documentId }: { documentId: string }) {
     const [replying, setReplying] = useState<string | null>(null);
     const thread = v.threads[documentId] ?? [];
     const doc = v.documents[documentId];
-    const mayPin = !!doc && (doc.user === me || stewards.value.includes(me));
+    const mayPin = !!doc && (isMe(doc.user) || isSteward());
     const pinned = new Set((v.prompts[documentId] ?? []).map(n => n.id));
     if (!thread.length) return <p class="annotation-thread annotation-thread--empty">No notes yet. Know something about this? Add the first one.</p>;
     const name = (a: AnnotationView | { op: AnnotationView["op"], anonymous: boolean, mine: boolean }) =>
-        a.anonymous && !a.mine ? "Someone" : displayName(a.op.user, v.names, me);
+        a.anonymous && !a.mine ? "Someone" : displayName(a.op.user, v, me);
     return (
         <ol class="annotation-thread">
             {thread.map(a => {
@@ -45,7 +45,7 @@ export function AnnotationThread({ documentId }: { documentId: string }) {
                         <p class="annotation-thread__meta">
                             {pinned.has(op.id) && <span class="annotation-thread__prompt">Prompt · </span>}
                             <span class="annotation-thread__author mark">{name(a)}</span>
-                            {parent && depth > MAX_INDENT && <span class="annotation-thread__to"> ↳ to {parent.access === "anonymous" ? "someone" : displayName(parent.user, v.names, me)}</span>}
+                            {parent && depth > MAX_INDENT && <span class="annotation-thread__to"> ↳ to {parent.access === "anonymous" ? "someone" : displayName(parent.user, v, me)}</span>}
                             {" · "}<time class="annotation-thread__time" dateTime={op.timestamp}>{when(op.timestamp)}</time>
                             {op.access !== "public" && <span class="annotation-thread__access"> · {op.access === "private" ? "only you can see this" : "shown without your name"}</span>}
                         </p>
@@ -54,7 +54,7 @@ export function AnnotationThread({ documentId }: { documentId: string }) {
                             <button class="annotation-thread__reply" type="button" aria-expanded={replying === op.id}
                                 onClick={() => setReplying(replying === op.id ? null : op.id)}>Reply</button>
                             {mayPin && op.access !== "private" && <PinButton documentId={documentId} noteId={op.id} />}
-                            {(mine || stewards.value.includes(me)) && (
+                            {(mine || isSteward()) && (
                                 <button class="annotation-thread__hide" type="button" onClick={() => attempt(() => store.hide(op.id))}>Hide</button>
                             )}
                         </p>

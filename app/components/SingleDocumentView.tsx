@@ -1,7 +1,6 @@
-import { attempt, presence, stewards, tell, tokens, useLibrary, useTransport, views, viewer } from "../state";
+import { attempt, identity, person, presence, stewards, tell, tokens, useLibrary, useTransport, views, viewer } from "../state";
 import { displayName, listPeople, mediumLabel, when } from "../format";
 import { href } from "../route";
-import { KeepButton } from "./KeepButton";
 import { DocumentViewer } from "./DocumentViewer";
 import { CollectionPicker } from "./CollectionPicker";
 import { AnnotationThread } from "./AnnotationThread";
@@ -30,11 +29,10 @@ export function SingleDocumentView({ id }: { id: string }) {
     }
 
     const p = doc.properties;
-    const canHide = doc.user === me || stewards.value.includes(me);
+    const canHide = (v.devices[doc.user] ?? doc.user) === person.value || stewards.value.includes(me) || stewards.value.includes(person.value);
     const others = presence.value.online.filter(e => e.viewing === id && e.user !== me).map(e => e.user);
     const presenter = tokens.value.presenter;
     const onScreen = presence.value.showing?.documentId === id;
-    const inCollections = (v.collectionsByDocument[id] ?? []).map(c => v.collections[c]).filter(Boolean);
 
     return (
         <article class="single-document">
@@ -52,33 +50,20 @@ export function SingleDocumentView({ id }: { id: string }) {
                     <p class="single-document__meta">{[mediumLabel(p.type), p.year].filter(Boolean).join(" · ")}</p>
                     {p.description && <p class="single-document__description">{p.description}</p>}
                     <p class="single-document__by">
-                        added by <span class="mark">{displayName(doc.user, v.names, me)}</span> · <time dateTime={doc.timestamp}>{when(doc.timestamp)}</time>
+                        added by <span class="mark">{displayName(doc.user, v, me)}</span> · <time dateTime={doc.timestamp}>{when(doc.timestamp)}</time>
                     </p>
                 </header>
 
                 {others.length > 0 && (
                     <p class="single-document__viewing" role="status">
                         <span class="single-document__dot" aria-hidden="true" />
-                        {listPeople(others, v.names)} {others.length === 1 ? "is" : "are"} also viewing this document.
+                        {listPeople(others, v)} {others.length === 1 ? "is" : "are"} also viewing this document.
                     </p>
                 )}
 
-                {inCollections.length > 0 && (
-                    <p class="single-document__collections">
-                        In {inCollections.length === 1 ? "a collection" : "collections"}:{" "}
-                        {inCollections.map((c, i) => (
-                            <span key={c.id}>
-                                {i > 0 && " · "}
-                                <a href={href({ view: "collection", id: c.id })}>{c.name ?? "Untitled collection"}</a>
-                                {" "}(<span class="mark">{displayName(c.owner, v.names, me)}</span>)
-                            </span>
-                        ))}
-                    </p>
-                )}
+                <CollectionPicker documentId={id} />
 
                 <div class="single-document__actions">
-                    <KeepButton id={id} />
-                    <CollectionPicker documentId={id} />
                     {presenter && (
                         <button class="single-document__show" type="button" aria-pressed={onScreen}
                             onClick={() => attempt(async () => {
@@ -93,7 +78,7 @@ export function SingleDocumentView({ id }: { id: string }) {
                 </div>
 
                 <details class="single-document__details">
-                    <summary class="single-document__details-summary">{mayEdit(doc, me, stewards.value) ? "Details — add or correct what's known" : "Details"}</summary>
+                    <summary class="single-document__details-summary">{mayEdit(doc, me, stewards.value, identity.value) ? "Details — add or correct what's known" : "Details"}</summary>
                     <DetailsForm id={id} />
                 </details>
 

@@ -17,7 +17,8 @@
     "rehearse": "node scripts/build.mjs && node scripts/rehearse.mjs",
     "build:firmware": "node scripts/build.mjs && node scripts/firmware-data.mjs",
     "test:firmware": "sh firmware/test/run.sh",
-    "rehearse:radio": "node scripts/build.mjs && node scripts/rehearse-radio.mjs"
+    "rehearse:radio": "node scripts/build.mjs && node scripts/rehearse-radio.mjs",
+    "rehearse:people": "node scripts/build.mjs && node scripts/rehearse-people.mjs"
   },
   "repository": {
     "type": "git",

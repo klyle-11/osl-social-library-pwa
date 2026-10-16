@@ -23,7 +23,7 @@ export function PromptStrips({ documentId, place = "reader" }: { documentId: str
             {!tucked && (
                 <ol class="prompt-strips__list">
                     {prompts.map((n, i) => {
-                        const by = n.access === "anonymous" ? "" : displayName(n.user, v.names, me);
+                        const by = n.access === "anonymous" ? "" : displayName(n.user, v, me);
                         const strip = (
                             <>
                                 <span class="prompt-strips__text">{n.body}</span>

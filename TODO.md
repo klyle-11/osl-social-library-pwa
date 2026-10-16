@@ -39,6 +39,23 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 - [ ] On the Pi 5: `npm install`, `npm start`, and repeat the first six checks.
 - [ ] Write down every place someone hesitated. That is the UX result.
 
+## Libraries, accounts, roles (W-D12)
+
+Design: [docs/libraries-and-accounts.md](docs/libraries-and-accounts.md). Rehearsed with `npm run rehearse:people`.
+
+- [x] Several libraries on one node, each with its own log and storage on the phone; `main` is the one that was there.
+- [x] Password protection, set when a library is made or later; changing it closes it again everywhere.
+- [x] Optional accounts, one per node; guests' names show with "(Guest)"; the first account needs the pairing code and looks after the node.
+- [x] Roles per library (admin, steward, presenter, digitizer, uploader, member) and groups.
+- [x] Who may add documents, as any combination; checked at the library, the radio included.
+- [x] A watch folder per library on the node.
+- [x] Collections: who may see and who may add, for everyone, only the owner, or chosen people and groups; the node sends a restricted collection only to the people it's for.
+- [ ] Make the first account on the Pi with the code on its screen, before the workshop: whoever does it looks after the node.
+- [ ] Decide whether `main` should be protected for the workshop (You → Libraries → Manage).
+- [ ] Drop points carry protected libraries and ask for the password there (W-D12, "Drop points"). Not built yet.
+- [ ] Signed ops, so the radio can't be used to write as an account (W-D12, "Known gap").
+- [ ] On real phones: sign in on two phones, Keep on one, see it on the other; a protected library's lock screen on Safari.
+
 ## Blocked on the domain (Gate three)
 
 - [ ] Rent the domain.

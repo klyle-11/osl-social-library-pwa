@@ -6,6 +6,13 @@ import type { StorageAdapter } from "../core/store";
 const PREFIX = "osl:";
 
 export class LocalStorageStorage implements StorageAdapter {
+    private prefix: string;
+
+    // one prefix per library: "osl:" for the main one, as before
+    constructor(prefix = PREFIX) {
+        this.prefix = prefix;
+    }
+
     // throws if the browser blocks storage (some private modes), so callers can fall back
     static available(): boolean {
         try {
@@ -18,7 +25,7 @@ export class LocalStorageStorage implements StorageAdapter {
     }
 
     async loadOps(): Promise<unknown[]> {
-        const raw = localStorage.getItem(PREFIX + "ops");
+        const raw = localStorage.getItem(this.prefix + "ops");
         if (!raw) return [];
         try {
             const v: unknown = JSON.parse(raw);
@@ -31,23 +38,23 @@ export class LocalStorageStorage implements StorageAdapter {
     async appendOps(ops: Op[]): Promise<void> {
         const all = await this.loadOps();
         all.push(...ops);
-        write(PREFIX + "ops", JSON.stringify(all));
+        write(this.prefix + "ops", JSON.stringify(all));
     }
 
     async getMeta(key: string): Promise<string | undefined> {
-        return localStorage.getItem(PREFIX + "meta:" + key) ?? undefined;
+        return localStorage.getItem(this.prefix + "meta:" + key) ?? undefined;
     }
 
     async setMeta(key: string, value: string): Promise<void> {
-        write(PREFIX + "meta:" + key, value);
+        write(this.prefix + "meta:" + key, value);
     }
 
     async putMedia(hash: string, data: string): Promise<void> {
-        write(PREFIX + "media:" + hash, data);
+        write(this.prefix + "media:" + hash, data);
     }
 
     async getMedia(hash: string): Promise<string | undefined> {
-        return localStorage.getItem(PREFIX + "media:" + hash) ?? undefined;
+        return localStorage.getItem(this.prefix + "media:" + hash) ?? undefined;
     }
 }
 

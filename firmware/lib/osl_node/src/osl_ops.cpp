@@ -9,7 +9,7 @@ namespace osl {
 static const size_t BODY = 1000, NAME = 80, TITLE = 200, TEXT = 1000, URL = 2000;
 
 static const char* const TYPES[] = {"document", "annotation", "add-to-collection", "remove-from-collection",
-                                    "name-collection", "name-user", "hide", "describe"};
+                                    "name-collection", "name-user", "hide", "describe", "collection-access"};
 static const char* const DESCRIBE_FIELDS[] = {"title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors", "prompts"};
 
 static bool oneOf(const char* s, const char* const* list, size_t n) {
@@ -86,6 +86,16 @@ static const char* collectionId(JsonObjectConst o) {
     const char* slash = strchr(id, '/');
     if (!slash || slash == id || !slash[1]) return "collectionId must look like owner/name";
     return nullptr;
+}
+
+// Who may see or add to a collection: "everyone", "owner" or "people:..." (core/access.ts).
+static const char* audience(JsonObjectConst o, const char* key, const char* notString, const char* bad) {
+    JsonVariantConst v = o[key];
+    if (!v.is<const char*>()) return notString;
+    const char* s = v.as<const char*>();
+    if (utf16Length(s) > TEXT) return "value is too long";
+    if (!strcmp(s, "everyone") || !strcmp(s, "owner") || !strncmp(s, "people:", 7)) return nullptr;
+    return bad;
 }
 
 // "<user>:<counter>": the counter is digits only and at least 1. Writes the user part's length.
@@ -166,6 +176,11 @@ const char* validateOp(JsonObjectConst o) {
     }
     if (!strcmp(type, "name-user")) return STR(o, "name", NAME);
     if (!strcmp(type, "hide")) return STR(o, "target", 200);
+    if (!strcmp(type, "collection-access")) {
+        TRY(collectionId(o));
+        TRY(audience(o, "see", "see must be a string", "see must be everyone, owner or people:"));
+        return audience(o, "add", "add must be a string", "add must be everyone, owner or people:");
+    }
     // describe
     TRY(STR(o, "target", 200));
     const char* field = o["field"].is<const char*>() ? o["field"].as<const char*>() : nullptr;

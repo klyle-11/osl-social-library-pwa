@@ -1,12 +1,12 @@
 import type {
-    Access, AddToCollection, Annotation, CollectionId, Describe, DescribeField, DocumentProperties, Hide,
+    Access, AddToCollection, Annotation, CollectionAccess, CollectionId, Describe, DescribeField, DocumentProperties, Hide,
     LibraryDocument, NameCollection, NameUser, Op, OpContext, OpId, OpType,
     RemoveFromCollection
 } from "./types";
 
 export const OP_TYPES: readonly OpType[] = [
     "document", "annotation", "add-to-collection", "remove-from-collection",
-    "name-collection", "name-user", "hide", "describe"
+    "name-collection", "name-user", "hide", "describe", "collection-access"
 ];
 
 export const DESCRIBE_FIELDS: readonly DescribeField[] = [
@@ -75,6 +75,10 @@ export function createHide(ctx: OpContext, target: OpId): Hide {
     return { ...base(ctx), type: "hide", target };
 }
 
+export function createCollectionAccess(ctx: OpContext, collectionId: CollectionId, see: string, add: string): CollectionAccess {
+    return { ...base(ctx), type: "collection-access", collectionId, see, add };
+}
+
 export function createDescribe(ctx: OpContext, target: OpId, field: DescribeField, value: string): Describe {
     return { ...base(ctx), type: "describe", target, field, value: value.trim() };
 }
@@ -103,6 +107,14 @@ function collectionIdError(o: Fields): string | null {
     const slash = id.indexOf("/");
     if (slash <= 0 || slash === id.length - 1) return "collectionId must look like owner/name";
     return null;
+}
+
+// who may see or add to a collection: "everyone", "owner" or "people:…" (core/access.ts)
+function audience(o: Fields, key: string): string | null {
+    const e = str(o, key, LIMITS.text);
+    if (e) return e;
+    const v = o[key] as string;
+    return v === "everyone" || v === "owner" || v.startsWith("people:") ? null : `${key} must be everyone, owner or people:…`;
 }
 
 function checkFields(o: Fields): string | null {
@@ -136,6 +148,8 @@ function checkFields(o: Fields): string | null {
             return str(o, "name", LIMITS.name);
         case "hide":
             return str(o, "target", 200);
+        case "collection-access":
+            return collectionIdError(o) ?? audience(o, "see") ?? audience(o, "add");
         case "describe": {
             const e = str(o, "target", 200);
             if (e) return e;

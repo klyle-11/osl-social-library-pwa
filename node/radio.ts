@@ -6,7 +6,8 @@
 // Outbound: the return path. The library's ops go out to the drop point one at a time,
 //           in log order, so phones out there see the community's additions and see
 //           their own notes come back (which is how they learn the notes arrived).
-//           Ops that were hidden are never sent; the hide itself is.
+//           Ops that were hidden are never sent; the hide itself is. Nor are the contents
+//           of collections that aren't for everyone (W-D12): they stay at the library.
 //
 // The modem speaks one JSON object per line (firmware/src/modem/main.cpp):
 //   to the modem    {"t":"send","id":"<op id>","op":{...}}  {"t":"durable","m":<msg>}  {"t":"ping"}
@@ -27,6 +28,7 @@ export type BridgeDeps = {
     savePosition(position: string): void,
     write(line: string): void,                        // one line to the modem
     onStatus?: (line: Record<string, unknown>) => void,   // a drop point's heartbeat (node/droppoints.ts)
+    skip?: (op: Op) => boolean,                       // never sent: a collection that isn't for everyone
     now?: () => number,
     say?: (msg: string) => void
 };
@@ -74,7 +76,7 @@ export function createBridge(d: BridgeDeps) {
         const skip = hidden();
         while (sent < d.log.length) {
             const op = d.log[sent];
-            if (skip.has(op.id)) { advance(sent + 1); continue; }   // hidden: never goes out
+            if (skip.has(op.id) || d.skip?.(op)) { advance(sent + 1); continue; }   // hidden or not for everyone: never goes out
             inflight = { at: sent, id: op.id, sentAt: now() };
             send({ t: "send", id: op.id, op });
             return;

@@ -4,7 +4,7 @@ import { hashData, shrinkImage } from "../../adapters/media";
 import { fileTypeOf } from "../../adapters/http-transport";
 import { Epub } from "../../adapters/epub";
 import { thumbnailOf } from "../thumbnails";
-import { attempt, nodeRole, tell, tokens, useLibrary, useTransport } from "../state";
+import { attempt, directory, nodeRole, tell, tokens, useLibrary, useTransport } from "../state";
 import { MEDIUMS } from "../format";
 import { href } from "../route";
 
@@ -46,11 +46,11 @@ export function AddDocument() {
                 // whole files go to the library untouched, so they need to reach it now
                 if (nodeRole.value === "droppoint") throw new Error("Files go straight to the library, so add this one when you're on the library's Wi-Fi. Photos can be added here.");
                 const small = await thumbnailOf(photo);   // the first page, the cover, a frame
-                const saved = await transport.upload(photo, station ?? null, setProgress);
+                const saved = await transport.upload(photo, setProgress);
                 hash = saved.hash;
                 fileType = saved.fileType;
                 if (small) {
-                    thumbnail = await transport.upload(new File([small], "thumbnail.jpg", { type: "image/jpeg" }), station ?? null, () => {})
+                    thumbnail = await transport.upload(new File([small], "thumbnail.jpg", { type: "image/jpeg" }), () => {})
                         .then(t => t.hash, () => undefined);   // the document matters; its picture can come later
                 }
             } else if (photo) {
@@ -96,6 +96,21 @@ export function AddDocument() {
                 book.close();
             }, () => { /* the library will say if it's damaged when someone opens it */ });
         }
+    }
+
+    // the library says who may add documents (W-D12); the node checks it too
+    const d = directory.value;
+    if (d && d.library.mayUpload === false) {
+        return (
+            <section class="add-document">
+                <h2 class="add-document__title">Add to the library</h2>
+                <p class="add-document__closed">
+                    Adding documents to {d.library.name} is for {whoMayAdd(d.library.upload ?? [])}.
+                    {!d.me && <> If that's you, <a href={href({ view: "account" })}>sign in</a>.</>}
+                    {" "}You can still keep, collect and write notes on everything here.
+                </p>
+            </section>
+        );
     }
 
     return (
@@ -166,4 +181,13 @@ export function AddDocument() {
             <button class="add-document__submit" type="submit" disabled={busy}>{busy ? "Adding…" : "Add"}</button>
         </form>
     );
+}
+
+function whoMayAdd(upload: string[]): string {
+    const words: Record<string, string> = {
+        accounts: "anyone signed in", members: "people with a role here", uploaders: "uploaders",
+        digitizers: "digitizers", presenters: "presenters"
+    };
+    const list = ["its admins and stewards", ...upload.map(u => words[u]).filter(Boolean)];
+    return list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }

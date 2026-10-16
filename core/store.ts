@@ -1,6 +1,6 @@
 import {
-    createAddToCollection, createAnnotation, createDescribe, createDocument, createHide, createNameCollection,
-    createNameUser, createRemoveFromCollection, keptCollectionId, parseOpId, validateOp
+    createAddToCollection, createAnnotation, createCollectionAccess, createDescribe, createDocument, createHide,
+    createNameCollection, createNameUser, createRemoveFromCollection, keptCollectionId, parseOpId, validateOp
 } from "./ops";
 import { mergeOps } from "./merge";
 import { makeBundle, readBundle, type Bundle } from "./bundle";
@@ -58,6 +58,8 @@ export class LibraryStore {
     conflicts: Conflict[] = [];
     rejected: { input: unknown, reason: string }[] = [];
     user = "";
+    // who this device writes for: the account it's signed in as, or (a guest) the device itself
+    person = "";
     outbox: OpId[] = [];
     mediaOutbox: string[] = [];
     // handed in at a drop point, not yet seen coming back from the library
@@ -81,6 +83,7 @@ export class LibraryStore {
             await this.storage.setMeta("user", user);
         }
         this.user = user;
+        this.person ||= user;
 
         const stored = this.accept(await this.storage.loadOps());
         // The seed (the node's catalog) is merged in memory on every open and never
@@ -122,22 +125,44 @@ export class LibraryStore {
         return this.commit(ctx => [createAnnotation(ctx, documentId, body, access, replyTo)]);
     }
 
+    // Signed in (`account`), this device writes for that account: its Kept and its new
+    // collections are the account's, shared by all of the account's devices.
+    setPerson(account: string | null) {
+        this.person = account ?? this.user;
+    }
+
+    // Become a new device: after signing out, or to start fresh when signing in on a device
+    // that wrote as a guest. What the old id wrote stays its own, and still syncs.
+    async renew(): Promise<string> {
+        const user = this.env.newDeviceId();
+        await this.storage.setMeta("user", user);
+        await this.storage.setMeta("seq", "0");
+        this.user = user;
+        this.person = user;
+        this.seq = 0;
+        this.notify();
+        return user;
+    }
+
     // one tap: into this person's "Kept" collection
     keep(documentId: OpId): Promise<OpId> {
-        return this.addToCollection(keptCollectionId(this.user), [documentId]);
+        return this.addToCollection(keptCollectionId(this.person), [documentId]);
     }
 
     unkeep(documentId: OpId): Promise<OpId> {
-        return this.removeFromCollection(keptCollectionId(this.user), documentId);
+        return this.removeFromCollection(keptCollectionId(this.person), documentId);
     }
 
-    // the new collection's id comes from this device's counter, so it can't collide
-    async createCollection(name: string, documentIds: OpId[] = []): Promise<CollectionId> {
+    // The new collection's id comes from this device's counter, so it can't collide. An
+    // account's collections carry the device too: two of its devices count separately.
+    // `access`: who may see it and add to it from the start (core/access.ts)
+    async createCollection(name: string, documentIds: OpId[] = [], access?: { see: string, add: string }): Promise<CollectionId> {
         let collectionId = "";
         await this.commit(ctx => {
-            collectionId = `${ctx.user}/${ctx.seq}`;
-            return [createNameCollection(ctx, collectionId, name)];
-        });
+            collectionId = this.person === ctx.user ? `${ctx.user}/${ctx.seq}` : `${this.person}/${ctx.user}.${ctx.seq}`;
+            const named = createNameCollection(ctx, collectionId, name);
+            return access ? [named, createCollectionAccess({ ...ctx, seq: ctx.seq + 1 }, collectionId, access.see, access.add)] : [named];
+        }, access ? 2 : 1);
         if (documentIds.length) await this.addToCollection(collectionId, documentIds);
         return collectionId;
     }
@@ -154,6 +179,11 @@ export class LibraryStore {
 
     nameCollection(collectionId: CollectionId, name: string): Promise<OpId> {
         return this.commit(ctx => [createNameCollection(ctx, collectionId, name)]);
+    }
+
+    // who may see it and who may add to it (core/access.ts): only the owner's count
+    setCollectionAccess(collectionId: CollectionId, see: string, add: string): Promise<OpId> {
+        return this.commit(ctx => [createCollectionAccess(ctx, collectionId, see, add)]);
     }
 
     setName(name: string): Promise<OpId> {
@@ -225,7 +255,13 @@ export class LibraryStore {
             // only clear what was taken; anything committed meanwhile stays queued
             await this.saveOutbox(this.outbox.filter(id => !taken.includes(id)));
             if (reply.role === "droppoint") {
-                this.relayed = [...this.relayed, ...taken.filter(id => !this.relayed.includes(id))];
+                // a collection that isn't for everyone doesn't come back by radio: don't wait for it
+                const quiet = restrictedCollections(this.ops);
+                const tracked = taken.filter(id => {
+                    const op = byId.get(id);
+                    return !(op && "collectionId" in op && quiet.has(op.collectionId)) && !this.relayed.includes(id);
+                });
+                this.relayed = [...this.relayed, ...tracked];
                 await this.storage.setMeta("relayed", JSON.stringify(this.relayed));
             }
         }
@@ -304,12 +340,17 @@ export class LibraryStore {
         }
         await this.storage.appendOps(ops);
         await this.storage.setMeta("seq", String(this.seq));
+        // In memory before it's in the outbox: a sync that starts while the outbox is being
+        // saved would otherwise find an id with no op, take it for an orphan, and drop it.
+        const merged = mergeOps(this.ops, ops);
+        this.ops = merged.ops;
+        this.conflicts = merged.conflicts;
         const shareable = ops.filter(isShareable).map(o => o.id);
         if (shareable.length) {
             this.outbox = [...this.outbox, ...shareable];
             await this.storage.setMeta("outbox", JSON.stringify(this.outbox));
         }
-        this.setOps(mergeOps(this.ops, ops));
+        this.notify();
         return ops[0].id;
     }
 
@@ -332,6 +373,18 @@ export class LibraryStore {
     private notify() {
         for (const fn of this.listeners) fn();
     }
+}
+
+// Collections whose latest access setting isn't "everyone can see". The node keeps their
+// ops at the library and sends them only to the people they're for.
+export function restrictedCollections(ops: Op[]): Set<CollectionId> {
+    const latest = new Map<CollectionId, { timestamp: string, see: string }>();
+    for (const op of ops) {
+        if (op.type !== "collection-access") continue;
+        const was = latest.get(op.collectionId);
+        if (!was || op.timestamp >= was.timestamp) latest.set(op.collectionId, op);
+    }
+    return new Set([...latest].filter(([, a]) => a.see !== "everyone").map(([id]) => id));
 }
 
 // Splits ops into requests of at most `maxBytes` of JSON (as UTF-8), in order.

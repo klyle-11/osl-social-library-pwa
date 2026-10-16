@@ -6,6 +6,7 @@ import { href } from "../route";
 import { DocumentViewer } from "./DocumentViewer";
 import { PromptStrips } from "./PromptStrips";
 import { QrCode } from "./QrCode";
+import { MAIN, libraryId } from "../library";
 
 // The big screen: what the room is looking at, how to join, who is here, and
 // every note as it arrives. It only displays; a paired presenter chooses what's on it.
@@ -24,7 +25,9 @@ export function Present() {
     // Phones can't reach "localhost": that is the screen's own name for itself.
     // So when the screen was opened that way, show the node's address on the network.
     const local = /^(localhost|127\.|\[::1\])/.test(location.host);
-    const address = (local ? info?.addresses[0] : undefined) ?? location.origin;
+    const origin = (local ? info?.addresses[0] : undefined) ?? location.origin;
+    // another library than the main one: the code takes phones straight into it
+    const address = libraryId === MAIN ? origin : `${origin}/?library=${libraryId}`;
 
     // Keep the newest note in view as they arrive. Only the notes scroll: scrollIntoView
     // would also drag the document up the screen. (On a narrow screen the whole side panel scrolls.)
@@ -45,7 +48,7 @@ export function Present() {
             <header class="present__bar">
                 <span class="present__brand">OSL</span>
                 <span class="present__people">
-                    {people.length === 0 ? "Waiting for people to join" : `${listPeople(people, v.names)} ${people.length === 1 ? "is" : "are"} here`}
+                    {people.length === 0 ? "Waiting for people to join" : `${listPeople(people, v)} ${people.length === 1 ? "is" : "are"} here`}
                 </span>
                 {presenter && (
                     <span class="present__controls">
@@ -96,7 +99,7 @@ export function Present() {
                         {doc && thread.map(({ op, anonymous, depth }) => (
                             <li class={`present__note${depth ? " present__note--reply" : ""}`} key={op.id} style={{ marginLeft: `${Math.min(depth, 3) * 1.5}rem` }}>
                                 <p class="present__note-body">{op.body}</p>
-                                <p class="present__note-by">{anonymous ? "Someone" : displayName(op.user, v.names, "")} · {when(op.timestamp)}</p>
+                                <p class="present__note-by">{anonymous ? "Someone" : displayName(op.user, v, "")} · {when(op.timestamp)}</p>
                             </li>
                         ))}
                         {!doc && v.feed.filter(e => e.kind === "annotation").slice(0, 8).map(e => e.kind === "annotation" && (

@@ -1,10 +1,14 @@
 import { computed, signal } from "@preact/signals";
 import type { LibraryDocument, OpId } from "../core/types";
 import { fileUrl } from "./format";
+import { MAIN, libraryId } from "./library";
 
 // One player for the whole app: a single <audio> element that outlives every page, so a
 // recording keeps playing while people browse. The queue is this device's own, kept
 // across visits; where in a recording it stopped is not.
+
+// each library has its own queue: its recordings are its own
+const KEY = libraryId === MAIN ? "osl-queue" : `osl-queue:${libraryId}`;
 
 export const queue = signal<OpId[]>(load());
 export const current = signal(-1);          // index into queue; -1 when nothing is loaded
@@ -15,7 +19,6 @@ export const failed = signal<string | null>(null);
 
 export const nowPlaying = computed(() => queue.value[current.value] ?? null);
 
-const KEY = "osl-queue";
 const STEP = 15;
 
 let audio: HTMLAudioElement | null = null;

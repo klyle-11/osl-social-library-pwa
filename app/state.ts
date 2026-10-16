@@ -3,8 +3,8 @@ import { useContext } from "preact/hooks";
 import { computed, signal } from "@preact/signals";
 import { buildViews } from "../core/views";
 import type { LibraryStore, NodeRole } from "../core/store";
-import type { Op, Presence } from "../core/types";
-import type { HttpTransport, Role } from "../adapters/http-transport";
+import type { Identity, Op, Presence } from "../core/types";
+import type { Directory, HttpTransport, Role } from "../adapters/http-transport";
 
 // Context says WHICH store/adapters this shell uses; signals say WHAT changed.
 export const LibraryContext = createContext<LibraryStore>(null!);
@@ -13,14 +13,50 @@ export const TransportContext = createContext<HttpTransport>(null!);
 export const useTransport = () => useContext(TransportContext);
 
 export const opLog = signal<Op[]>([]);
-export const viewer = signal("");
-export const stewards = signal<string[]>([]);
+export const viewer = signal("");               // this device
 export const pending = signal(0);
 
-export const views = computed(() =>
-    buildViews(opLog.value, { viewer: viewer.value, stewards: stewards.value }));
+// What the node says about people here (W-D12): accounts, which devices are whose, groups,
+// roles and settings. Kept on the device, so names and rights hold offline too.
+export const directory = signal<Directory | null>(null);
+// the main library's catalog says who looks after it; the directory adds accounts
+export const catalogStewards = signal<string[]>([]);
+export const stewards = computed(() => [...catalogStewards.value, ...(directory.value?.stewards ?? [])]);
+export const identity = computed<Identity>(() => ({
+    devices: directory.value?.devices ?? {},
+    groups: Object.fromEntries((directory.value?.groups ?? []).map(g => [g.id, g.members]))
+}));
+// who this device writes for: its account, or (a guest) itself
+export const person = computed(() => identity.value.devices[viewer.value] ?? viewer.value);
+// is this user (a device, or an account) the person on this device?
+export function isMe(user: string): boolean {
+    return (identity.value.devices[user] ?? user) === person.value;
+}
 
-export type SyncState = "starting" | "no-node" | "syncing" | "synced" | "offline" | "paused";
+// does the person on this device have a steward's say here?
+export function isSteward(): boolean {
+    return stewards.value.includes(viewer.value) || stewards.value.includes(person.value);
+}
+
+// the node has no library by this page's name (deleted, or a mistyped address)
+export const missing = signal(false);
+
+// the node says this library needs its password, or an account with a role in it
+export const locked = signal(false);
+// this device writes for an account that isn't signed in here: its work waits
+export const signedOut = computed(() => {
+    const d = directory.value;
+    const owner = d?.devices?.[viewer.value];
+    return !!owner && d?.me?.id !== owner;
+});
+
+export const views = computed(() =>
+    buildViews(opLog.value, {
+        viewer: viewer.value, stewards: stewards.value, identity: identity.value,
+        accounts: directory.value?.accounts ?? {}
+    }));
+
+export type SyncState = "starting" | "no-node" | "syncing" | "synced" | "offline" | "paused" | "locked";
 export const syncState = signal<SyncState>("starting");
 export const lastSync = signal<string | null>(null);
 export const paused = signal(false);

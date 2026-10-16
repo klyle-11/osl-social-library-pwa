@@ -611,5 +611,69 @@
    "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   },
   "valid": false
+ },
+ {
+  "case": "collection access: everyone sees, owner adds",
+  "op": {
+   "id": "a:40",
+   "type": "collection-access",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/1",
+   "see": "everyone",
+   "add": "owner"
+  },
+  "valid": true
+ },
+ {
+  "case": "collection access: people and groups",
+  "op": {
+   "id": "a:40",
+   "type": "collection-access",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/1",
+   "see": "people:a-ama,g-club",
+   "add": "people:g-club"
+  },
+  "valid": true
+ },
+ {
+  "case": "collection access: see must be a known kind",
+  "op": {
+   "id": "a:40",
+   "type": "collection-access",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/1",
+   "see": "friends",
+   "add": "owner"
+  },
+  "valid": false
+ },
+ {
+  "case": "collection access: add is required",
+  "op": {
+   "id": "a:40",
+   "type": "collection-access",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "a/1",
+   "see": "owner"
+  },
+  "valid": false
+ },
+ {
+  "case": "collection access: collectionId must look like owner/name",
+  "op": {
+   "id": "a:40",
+   "type": "collection-access",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "collectionId": "nope",
+   "see": "owner",
+   "add": "owner"
+  },
+  "valid": false
  }
 ]

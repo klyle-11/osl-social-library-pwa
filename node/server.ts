@@ -6,28 +6,30 @@ import { createServer as createHttp, type IncomingMessage, type ServerResponse }
 import { createServer as createHttps } from "node:https";
 import {
     existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync, createReadStream,
-    createWriteStream, renameSync, rmSync, openSync, writeSync, fsyncSync, readSync, closeSync
+    createWriteStream, renameSync, rmSync, openSync, readSync, closeSync
 } from "node:fs";
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { hostname, networkInterfaces } from "node:os";
 import { createServer as createNetServer } from "node:net";
-import { extname, join, normalize, resolve, sep } from "node:path";
-import { validateOp } from "../core/ops";
-import { canonical } from "../core/merge";
-import { isShareable } from "../core/store";
-import { PresenceBoard } from "../core/presence";
-import { positionFor } from "../core/cursor";
+import { extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { startRadio, type Bridge } from "./radio";
 import { DropPointRegister } from "./droppoints";
 import { exportEntries, sendZip } from "./export";
-import type { Op } from "../core/types";
+import { writeAside } from "./files";
+import { Accounts, MIN_PASSWORD, Sessions } from "./accounts";
+import { Libraries, MAIN } from "./libraries";
+import { verifyPassword } from "./passwords";
+import { startWatching } from "./watch";
+import {
+    NOT_PAIRED, cleanRoles, cleanUploaders, mayAdminister, mayOpen, mayPresent, mayUpload, rolesOf, stewardsOf,
+    type Account, type LibraryConfig, type Paired, type Session
+} from "./policy";
+import type { Identity, Op } from "../core/types";
 
 const ROOT = resolve(process.env.OSL_ROOT ?? ".");
 const STATIC = join(ROOT, "dist");
 const DATA = join(ROOT, "data");
 const MEDIA = join(DATA, "media");
-const LOG = join(DATA, "ops.jsonl");
-const CONFLICTS = join(DATA, "conflicts.jsonl");
 const PORT = Number(process.env.PORT ?? 8080);
 const MAX_BODY = 8 * 1024 * 1024;
 const MAX_UPLOAD = Number(process.env.OSL_MAX_UPLOAD ?? 2 * 1024 * 1024 * 1024);
@@ -39,7 +41,6 @@ const SUGGESTIONS = join(DATA, "suggestions.jsonl");
 const SUGGESTIONS_KEY_FILE = join(DATA, "suggestions-key");
 const SUGGESTIONS_MAX_FILE = 20 * 1024 * 1024;
 const SUGGESTION_KINDS = ["broken", "confusing", "idea", "testing", "other"];
-const LOG_ID_FILE = join(DATA, "log-id");
 const DEV = process.env.OSL_DEV === "1";
 
 // dev only: the build script tells us when to reload every open page
@@ -51,88 +52,28 @@ process.on("message", (m: { type?: string }) => {
 
 mkdirSync(MEDIA, { recursive: true });
 
-// ---- the op log: append-only file, arrival order; the cursor is a position in it ----
-const log: Op[] = [];
-const byId = new Map<string, string>();     // id -> canonical form
+// ---- libraries (each with its own op log), accounts and sessions: W-D12 ----
+const libraries = new Libraries(DATA, process.env.OSL_NAME ?? "Library");
+const accounts = new Accounts(join(DATA, "accounts.json"), () => libraries.bump());
+const sessions = new Sessions(join(DATA, "sessions.json"));
+const main = libraries.log(MAIN);
+// files put in a library's folder on the node become its documents
+const watcher = startWatching({ libraries, media: MEDIA, maxBytes: MAX_UPLOAD });
 
-// A cursor is "<log id>.<position>". The log id is made with the log, so after a clean
-// start (data/ deleted) or on another node, a phone's old cursor matches nothing and it
-// reads from the beginning, instead of waiting for a position past ops it never got.
-const LOG_ID = (existsSync(LOG) && existsSync(LOG_ID_FILE) && readFileSync(LOG_ID_FILE, "utf8").trim()) || newLogId();
-
-function newLogId(): string {
-    const id = randomBytes(6).toString("hex");
-    writeFileSync(LOG_ID_FILE, id);
-    return id;
+// who is who, for the node's own decisions: every signed-in device, and this library's groups
+function identityOf(lib: LibraryConfig): Identity {
+    return { devices: accounts.devices(), groups: Object.fromEntries(lib.groups.map(g => [g.id, g.members])) };
 }
 
-// what a phone sent is every cursor it holds; this node reads its own (core/cursor.ts)
-const position = (after: string | null) => positionFor(after ?? "", LOG_ID, log.length);
-const NODE = { id: LOG_ID, role: "library" };
-
-const cursorNow = () => `${LOG_ID}.${log.length}`;
-
-if (existsSync(LOG)) {
-    // A power cut during a write leaves a last line cut short. It is skipped (and kept in
-    // the file), so the node still starts with everything else.
-    const text = readFileSync(LOG, "utf8");
-    let damaged = 0;
-    for (const line of text.split("\n")) {
-        if (!line.trim()) continue;
-        let parsed: unknown;
-        try { parsed = JSON.parse(line); } catch { damaged++; continue; }
-        const v = validateOp(parsed);
-        if (v.ok && !byId.has(v.op.id)) {
-            log.push(v.op);
-            byId.set(v.op.id, canonical(v.op));
-        }
-    }
-    // without this the next op would be glued onto the cut line, and lost with it
-    if (text.length && !text.endsWith("\n")) appendFileSync(LOG, "\n");
-    if (damaged) console.warn(`${damaged} damaged line${damaged === 1 ? "" : "s"} in ${LOG} skipped (left in the file).`);
-}
-
-// Held open for appending. Each batch is on disk (fsync) before anyone is told it was
-// stored: a drop point deletes its copy when the library says so.
-const logFd = openSync(LOG, "a");
-
-function accept(input: unknown[]) {
-    let added = 0, duplicates = 0, conflicts = 0;
-    const rejected: string[] = [];
-    const fresh = new Map<string, { op: Op, key: string }>();
-    for (const item of input) {
-        const v = validateOp(item);
-        if (!v.ok) { rejected.push(v.reason); continue; }
-        if (!isShareable(v.op)) { rejected.push("private annotations stay on the phone"); continue; }
-        const key = canonical(v.op);
-        const existing = byId.get(v.op.id) ?? fresh.get(v.op.id)?.key;
-        if (existing === key) { duplicates++; continue; }
-        if (existing !== undefined) {
-            // same id, different payload: keep the first, record the other, never overwrite
-            conflicts++;
-            appendFileSync(CONFLICTS, JSON.stringify({ at: new Date().toISOString(), op: v.op }) + "\n");
-            continue;
-        }
-        fresh.set(v.op.id, { op: v.op, key });
-        added++;
-    }
-    if (fresh.size) {
-        // on disk first; only then in the log that answers "duplicate" to a retry
-        writeSync(logFd, [...fresh.values()].map(f => JSON.stringify(f.op) + "\n").join(""));
-        fsyncSync(logFd);
-        for (const f of fresh.values()) {
-            log.push(f.op);
-            byId.set(f.op.id, f.key);
-        }
-    }
-    // `keep` is always empty here: the library takes every valid op (a drop point may not)
-    return { added, duplicates, conflicts, rejected, keep: [], cursor: cursorNow(), node: NODE };
+// may a document op from this device be taken? Over the radio there is no session: only accounts count.
+function documentRule(lib: LibraryConfig, paired: Paired) {
+    return (op: Op) => op.type === "document" && !mayUpload(lib, accounts.get(accounts.ownerOf(op.user)), paired)
+        ? "Adding documents to this library isn't open to everyone." : null;
 }
 
 // ---- the radio (gate seven): RADIO_PORT is the LoRa modem's serial device, e.g. /dev/ttyACM0 ----
 const RADIO_POSITION = join(DATA, "radio-position");
 const DROP_POINTS = join(DATA, "droppoints.json");
-const writeAside = (file: string, text: string) => { writeFileSync(file + ".tmp", text); renameSync(file + ".tmp", file); };
 
 // every drop point this library has heard, from their heartbeats (node/droppoints.ts)
 const dropPoints = new DropPointRegister(
@@ -142,7 +83,9 @@ const dropPoints = new DropPointRegister(
 
 const radio: Bridge | null = process.env.RADIO_PORT
     ? startRadio(process.env.RADIO_PORT, {
-        log, logId: LOG_ID, accept,
+        log: main.log, logId: main.logId,
+        accept: ops => main.accept(ops, documentRule(libraries.get(MAIN)!, NOT_PAIRED)),
+        skip: op => main.notFor(null, identityOf(libraries.get(MAIN)!))(op),
         loadPosition: () => (existsSync(RADIO_POSITION) ? readFileSync(RADIO_POSITION, "utf8").trim() : null),
         savePosition: p => writeAside(RADIO_POSITION, p),
         onStatus: line => { dropPoints.heard(line, new Date()); }
@@ -154,9 +97,6 @@ function appVersion(): string {
     const sw = join(STATIC, "sw.js");
     return existsSync(sw) ? /osl-shell-([0-9a-f]+)/.exec(readFileSync(sw, "utf8"))?.[1] ?? "dev" : "";
 }
-
-// ---- who is here, and what the presenting screen shows: memory only, never the log ----
-const board = new PresenceBoard();
 
 // ---- pairing: a code on the node's own screen turns one device into the presenter
 // or the digitization station. Presenters can be several; the station is one at a time. ----
@@ -170,7 +110,6 @@ function readTokens(): object {
     try { return JSON.parse(readFileSync(TOKENS, "utf8")); }
     catch { console.warn(`${TOKENS} could not be read: paired devices will need to pair again.`); return {}; }
 }
-const wrongCodes = new Map<string, { count: number, until: number }>();
 
 function pair(role: Role): string {
     const token = randomBytes(24).toString("hex");
@@ -343,9 +282,120 @@ function localAddresses(): string[] {
     return found;
 }
 
+// ---- who is asking: their session (a cookie), its account, and any pairing token ----
+type Who = { session: Session | null, account: Account | null, paired: Paired };
+
+// `token`: the pairing tokens a device holds, comma-separated (x-osl-token)
+function whoIs(req: IncomingMessage, token: unknown = req.headers["x-osl-token"]): Who {
+    const session = sessions.read(req);
+    const account = accounts.get(session?.account);
+    const held = typeof token === "string" ? token.split(",").slice(0, 4).map(t => t.trim()) : [];
+    return {
+        session,
+        account: account && !account.disabled ? account : null,
+        paired: { presenter: held.some(t => hasRole(t, "presenter")), station: held.some(t => hasRole(t, "station")) }
+    };
+}
+
+// `?library=<id>`; without it, the main library (so drop points and older apps keep working)
+function libraryFor(url: URL): LibraryConfig | null {
+    return libraries.get(url.searchParams.get("library") || MAIN);
+}
+
+function locked(res: ServerResponse, lib: LibraryConfig) {
+    return json(res, 401, { error: "This library is protected. Enter its password, or sign in.", locked: true, library: { id: lib.id, name: lib.name } });
+}
+
+// Too many wrong passwords or codes from one address: wait a minute.
+const strikes = new Map<string, { count: number, until: number }>();
+function struckOut(key: string): boolean {
+    const s = strikes.get(key);
+    if (s && s.until < Date.now()) strikes.delete(key);
+    return !!s && s.count >= 5 && s.until > Date.now();
+}
+function strike(key: string) {
+    const s = strikes.get(key);
+    strikes.set(key, { count: (s?.count ?? 0) + 1, until: Date.now() + 60_000 });
+    if (strikes.size > 10_000) strikes.clear();   // a flood of addresses can't fill the memory
+}
+
+// the main library's catalog (library/documents.json, built into dist/): read when it changes
+let catalogCache: { at: number, stewards: string[], ops: Op[] } = { at: -1, stewards: [], ops: [] };
+function catalog() {
+    const file = join(STATIC, "catalog.json");
+    const at = existsSync(file) ? statSync(file).mtimeMs : 0;
+    if (at !== catalogCache.at) {
+        try {
+            const c = at ? JSON.parse(readFileSync(file, "utf8")) as { stewards?: string[], ops?: Op[] } : {};
+            catalogCache = { at, stewards: c.stewards ?? [], ops: c.ops ?? [] };
+        } catch {
+            catalogCache = { at, stewards: [], ops: [] };
+        }
+    }
+    return catalogCache;
+}
+
+// Everything the app needs to know about people here: the "directory" (W-D12). A library
+// this browser may not open says only its name.
+function directory(lib: LibraryConfig, w: Who) {
+    const base = {
+        revision: libraries.revision,
+        libraries: libraries.list().map(l => ({ id: l.id, name: l.name, protected: !!l.password, open: mayOpen(l, w.account, w.session) })),
+        me: w.account && { id: w.account.id, username: w.account.username, name: w.account.name, admin: w.account.admin },
+        signup: accounts.signup,
+        setup: accounts.count === 0          // no accounts yet: the first needs the pairing code
+    };
+    if (!mayOpen(lib, w.account, w.session)) return { ...base, library: { id: lib.id, name: lib.name, protected: true, locked: true } };
+    const log = libraries.log(lib.id);
+    // the accounts anyone here could meet: who wrote here, who has a role here, the node admins, me
+    const relevant = new Set<string>(Object.keys(lib.roles));
+    for (const d of log.authors) { const a = accounts.ownerOf(d); if (a) relevant.add(a); }
+    for (const g of lib.groups) for (const m of g.members) relevant.add(m);
+    if (w.account) relevant.add(w.account.id);
+    const people = accounts.list().filter(a => relevant.has(a.id) || a.admin);
+    const roles = rolesOf(lib, w.account);
+    const admin = roles.has("admin");
+    return {
+        ...base,
+        library: {
+            id: lib.id, name: lib.name, protected: !!lib.password, locked: false,
+            upload: lib.upload, mayUpload: mayUpload(lib, w.account, w.paired), roles: [...roles],
+            ...(w.account?.admin && { watch: lib.watch })
+        },
+        accounts: Object.fromEntries(people.map(a => [a.id, a.name])),
+        devices: Object.fromEntries(people.flatMap(a => a.devices.map(d => [d, a.id]))),
+        groups: lib.groups,
+        stewards: [...(lib.id === MAIN ? catalog().stewards : []), ...stewardsOf(lib, accounts.list())],
+        // who holds which role: for the people who hand them out
+        ...(admin && { roles: lib.roles })
+    };
+}
+
+// May this device's op be taken from this browser? A signed-in device's ops wait on the
+// phone until its account is signed in again. Then the library's rule for documents.
+function authorRule(lib: LibraryConfig, w: Who) {
+    const documents = documentRule(lib, w.paired);
+    return (op: Op) => {
+        const owner = accounts.ownerOf(op.user);
+        if (owner && owner !== w.account?.id) return { keep: "signed out" };
+        return documents(op);
+    };
+}
+
+const str = (v: unknown, max = 200) => (typeof v === "string" ? v.slice(0, max) : "");
+
 async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://node");
-    const path = decodeURIComponent(url.pathname);
+    let path = decodeURIComponent(url.pathname);
+    // Another library's API is under /api/l/<id>/ (the same as ?library=<id>). A drop point
+    // that carries only the main library doesn't know these paths and says 404, so a phone
+    // in another library never hands its notes to the wrong one there.
+    const scoped = /^\/api\/l\/([a-z0-9-]{1,32})(\/.*)$/.exec(path);
+    if (scoped) {
+        url.searchParams.set("library", scoped[1]);
+        path = "/api" + scoped[2];
+    }
+    const ip = req.socket.remoteAddress ?? "?";
 
     if (DEV && path === "/api/dev/reload") {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
@@ -355,19 +405,27 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return;
     }
 
-    if (path === "/api/health") {
-        return json(res, 200, { ok: true, ops: log.length, online: board.snapshot(Date.now()).online.length });
+    // A page on another site can't act with someone's session here: the cookie is SameSite,
+    // and a request that says it comes from elsewhere is turned away.
+    if (req.method === "POST" && req.headers.origin) {
+        let host = "";
+        try { host = new URL(req.headers.origin).host; } catch { /* "null": a sandboxed page */ }
+        if (host !== req.headers.host) return json(res, 403, { error: "That request came from another site." });
     }
 
-    // what a joining phone needs to be told: the addresses this node answers on
+    if (path === "/api/health") {
+        return json(res, 200, { ok: true, ops: main.log.length, online: main.board.snapshot(Date.now()).online.length, libraries: libraries.list().length });
+    }
+
     // the library and every drop point it has heard: for the Drop points page
     if (path === "/api/droppoints" && req.method === "GET") {
         const version = appVersion();
         const modem = radio?.status() ?? null;
+        const now = Date.now();
         return json(res, 200, {
             library: {
                 app: version,
-                phones: board.snapshot(Date.now()).online.length,
+                phones: libraries.list().reduce((n, l) => n + libraries.log(l.id).board.snapshot(now).online.length, 0),
                 radio: modem && {
                     port: process.env.RADIO_PORT,
                     // the modem says hello every 30 s
@@ -381,35 +439,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         });
     }
 
-    // a paired presenter takes a drop point off the list (it reappears if it is heard again)
+    // a paired presenter (or a node admin) takes a drop point off the list (it reappears if it is heard again)
     if (path === "/api/droppoints/forget" && req.method === "POST") {
         const body = await readBody(req);
-        if (!hasRole(body.token, "presenter")) return json(res, 403, { error: "Only a paired presenter can change the list." });
+        if (!hasRole(body.token, "presenter") && !whoIs(req).account?.admin) return json(res, 403, { error: "Only a paired presenter can change the list." });
         return json(res, dropPoints.forget(String(body.id ?? "")) ? 200 : 404, {});
     }
 
     if (path === "/api/radio" && req.method === "GET") {
         return json(res, 200, radio ? radio.status() : { radio: "off", how: "start the node with RADIO_PORT set to the modem's serial device" });
-    }
-
-    // the whole library as one zip, for anyone who wants a copy (You → Export the library)
-    if (path === "/api/export") {
-        const catalog = existsSync(join(STATIC, "catalog.json"))
-            ? JSON.parse(readFileSync(join(STATIC, "catalog.json"), "utf8")) as { stewards?: string[], ops?: Op[] }
-            : {};
-        const ops = [...(catalog.ops ?? []), ...log];
-        const fileFor = (doc: { hash?: string, url?: string }) => {
-            if (doc.url && !/^[a-z]+:/i.test(doc.url)) {
-                const f = join(STATIC, normalize(doc.url).replace(/^([/\\])+/, ""));
-                if (f.startsWith(STATIC + sep) && existsSync(f)) return f;
-            }
-            if (doc.hash && HASH.test(doc.hash) && existsSync(join(MEDIA, doc.hash))) return join(MEDIA, doc.hash);
-            return null;
-        };
-        const day = new Date().toISOString().slice(0, 10);
-        console.log(`export: ${ops.length} ops`);
-        await sendZip(res, `osl-library-${day}.zip`, exportEntries(ops, catalog.stewards ?? [], fileFor, appVersion() || "?"));
-        return;
     }
 
     if (path === "/api/info") {
@@ -421,13 +459,280 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         });
     }
 
+    // ---- accounts: optional, one per node (W-D12) ----
+
+    if (path === "/api/account/signup" && req.method === "POST") {
+        const body = await readBody(req);
+        const first = accounts.count === 0;
+        if (first) {
+            // the first account is the node admin: it takes the code on the node's own screen
+            if (struckOut("code:" + ip)) return json(res, 429, { error: "Too many wrong codes. Wait a minute and try again." });
+            if (body.code !== PAIR_CODE) { strike("code:" + ip); return json(res, 403, { error: "The first account looks after this node, so it needs the code on the library's screen." }); }
+        } else if (!accounts.signup && !whoIs(req).account?.admin) {
+            return json(res, 403, { error: "Accounts here are made by the node admin." });
+        }
+        const made = await accounts.create({ username: str(body.username, 64), name: str(body.name, 80), password: str(body.password, 1000) });
+        if (typeof made === "string") return json(res, 400, { error: made });
+        console.log(`account made: ${made.username}${made.admin ? " (node admin)" : ""}`);
+        // an admin making an account for someone else stays signed in as themselves
+        if (!first && whoIs(req).account?.admin && body.signIn === false) return json(res, 200, { account: made.id });
+        const session = sessions.ensure(req, res, secure);
+        session.account = made.id;
+        sessions.changed();
+        const device = str(body.device, 64);
+        return json(res, 200, { account: made.id, linked: device ? accounts.link(made.id, device) : null });
+    }
+
+    if (path === "/api/account/signin" && req.method === "POST") {
+        const body = await readBody(req);
+        if (struckOut("signin:" + ip)) return json(res, 429, { error: "Too many wrong tries. Wait a minute and try again." });
+        const account = await accounts.check(str(body.username, 64), str(body.password, 1000));
+        if (!account) { strike("signin:" + ip); return json(res, 403, { error: "That username and password don't match." }); }
+        const session = sessions.ensure(req, res, secure);
+        session.account = account.id;
+        sessions.changed();
+        const device = str(body.device, 64);
+        return json(res, 200, { account: account.id, linked: device ? accounts.link(account.id, device) : null });
+    }
+
+    // this (new) device writes for the signed-in account from now on
+    if (path === "/api/account/link" && req.method === "POST") {
+        const body = await readBody(req);
+        const w = whoIs(req);
+        if (!w.account) return json(res, 401, { error: "Sign in first." });
+        const device = str(body.device, 64);
+        if (!device) return json(res, 400, { error: "expected { device }" });
+        return json(res, 200, { linked: accounts.link(w.account.id, device) });
+    }
+
+    if (path === "/api/account/signout" && req.method === "POST") {
+        const session = sessions.read(req);
+        if (session) { session.account = null; sessions.changed(); }
+        return json(res, 200, { ok: true });
+    }
+
+    if (path === "/api/account/update" && req.method === "POST") {
+        const body = await readBody(req);
+        const w = whoIs(req);
+        if (!w.account) return json(res, 401, { error: "Sign in first." });
+        if (typeof body.password === "string") {
+            if (struckOut("signin:" + ip)) return json(res, 429, { error: "Too many wrong tries. Wait a minute and try again." });
+            if (!(await verifyPassword(w.account.hash, str(body.current, 1000)))) { strike("signin:" + ip); return json(res, 403, { error: "Your current password isn't right." }); }
+        }
+        const no = await accounts.update(w.account.id, {
+            ...(typeof body.name === "string" && { name: str(body.name, 80) }),
+            ...(typeof body.password === "string" && { password: str(body.password, 1000) })
+        });
+        return no ? json(res, 400, { error: no }) : json(res, 200, { ok: true });
+    }
+
+    // The node admin sees everyone; a library admin needs names to hand out roles.
+    if (path === "/api/accounts" && req.method === "GET") {
+        const w = whoIs(req);
+        if (w.account?.admin) {
+            return json(res, 200, {
+                signup: accounts.signup,
+                accounts: accounts.list().map(a => ({ id: a.id, username: a.username, name: a.name, admin: a.admin, disabled: !!a.disabled, created: a.created, devices: a.devices.length }))
+            });
+        }
+        if (w.account && libraries.list().some(l => mayAdminister(l, w.account))) {
+            return json(res, 200, { accounts: accounts.list().filter(a => !a.disabled).map(a => ({ id: a.id, username: a.username, name: a.name })) });
+        }
+        return json(res, 403, { error: "Only admins can see the list of accounts." });
+    }
+
+    if (path === "/api/accounts/update" && req.method === "POST") {
+        const body = await readBody(req);
+        if (!whoIs(req).account?.admin) return json(res, 403, { error: "Only the node admin can change other people's accounts." });
+        const id = str(body.id, 64);
+        if (typeof body.password === "string" && body.password.length < MIN_PASSWORD) return json(res, 400, { error: `A password needs at least ${MIN_PASSWORD} characters.` });
+        const no = await accounts.update(id, {
+            ...(typeof body.name === "string" && { name: body.name }),
+            ...(typeof body.password === "string" && { password: body.password }),
+            ...(typeof body.admin === "boolean" && { admin: body.admin }),
+            ...(typeof body.disabled === "boolean" && { disabled: body.disabled })
+        });
+        if (no) return json(res, 400, { error: no });
+        if (body.disabled === true || typeof body.password === "string") sessions.signOutEverywhere(id);
+        return json(res, 200, { ok: true });
+    }
+
+    if (path === "/api/accounts/signup" && req.method === "POST") {
+        const body = await readBody(req);
+        if (!whoIs(req).account?.admin) return json(res, 403, { error: "Only the node admin can change this." });
+        accounts.setSignup(body.open === true);
+        return json(res, 200, { signup: accounts.signup });
+    }
+
+    // ---- libraries: made by the node admin, each run by its own admins ----
+
+    if (path === "/api/libraries/create" && req.method === "POST") {
+        const body = await readBody(req);
+        if (!whoIs(req).account?.admin) return json(res, 403, { error: "Only the node admin can make libraries." });
+        const made = await libraries.create({ id: str(body.id, 64), name: str(body.name, 80), password: str(body.password, 1000) || null, upload: body.upload });
+        if (typeof made === "string") return json(res, 400, { error: made });
+        console.log(`library made: ${made.id}${made.password ? " (protected)" : ""}`);
+        return json(res, 200, { id: made.id });
+    }
+
+    if (path === "/api/directory" && req.method === "GET") {
+        const lib = libraryFor(url);
+        const w = whoIs(req);
+        if (!lib) return json(res, 404, { error: "There's no library with that name here.", ...directory(libraries.get(MAIN)!, w) });
+        return json(res, 200, directory(lib, w));
+    }
+
+    // a library's password, for this browser
+    if (path === "/api/unlock" && req.method === "POST") {
+        const lib = libraryFor(url);
+        if (!lib) return json(res, 404, { error: "There's no library with that name here." });
+        const body = await readBody(req);
+        const key = `unlock:${ip}:${lib.id}`;
+        if (struckOut(key)) return json(res, 429, { error: "Too many wrong tries. Wait a minute and try again." });
+        if (!lib.password) return json(res, 200, { ok: true });
+        if (!(await verifyPassword(lib.password, str(body.password, 1000)))) { strike(key); return json(res, 403, { error: "That isn't this library's password." }); }
+        const session = sessions.ensure(req, res, secure);
+        session.unlocked[lib.id] = lib.passwordSet!;
+        sessions.changed();
+        return json(res, 200, { ok: true });
+    }
+
+    if (path === "/api/lock" && req.method === "POST") {
+        const lib = libraryFor(url);
+        const session = sessions.read(req);
+        if (lib && session) { delete session.unlocked[lib.id]; sessions.changed(); }
+        return json(res, 200, { ok: true });
+    }
+
+    // Everything below is about one library, and needs it open.
+    const lib = path.startsWith("/api/") ? libraryFor(url) : libraries.get(MAIN);
+    if (!lib) return json(res, 404, { error: "There's no library with that name here." });
+    const log = libraries.log(lib.id);
+
+    if (path === "/api/libraries/settings" && req.method === "POST") {
+        const body = await readBody(req);
+        const w = whoIs(req);
+        if (!mayAdminister(lib, w.account)) return json(res, 403, { error: "Only this library's admins can change its settings." });
+        if ("password" in body) {
+            if (body.password !== null && typeof body.password !== "string") return json(res, 400, { error: "password must be a string or null" });
+            const no = await libraries.setPassword(lib, (body.password as string | null) || null);
+            if (no) return json(res, 400, { error: no });
+        }
+        let watch: { folder: string } | null | undefined;
+        if ("watch" in body) {
+            // a folder on the node's own disk: only for whoever looks after the node
+            if (!w.account?.admin) return json(res, 403, { error: "Only the node admin can choose a folder on the node." });
+            const folder = str(body.watch, 1000).trim();
+            if (folder && (!isAbsolute(folder) || !existsSync(folder) || !statSync(folder).isDirectory())) return json(res, 400, { error: "That isn't a folder on the node (give its full path)." });
+            watch = folder ? { folder: resolve(folder) } : null;
+        }
+        libraries.update(lib, {
+            ...(typeof body.name === "string" && { name: body.name }),
+            ...(Array.isArray(body.upload) && { upload: cleanUploaders(body.upload) }),
+            ...(watch !== undefined && { watch })
+        });
+        if (watch !== undefined) watcher.refresh();
+        return json(res, 200, directory(lib, w));
+    }
+
+    if (path === "/api/libraries/delete" && req.method === "POST") {
+        if (!whoIs(req).account?.admin) return json(res, 403, { error: "Only the node admin can delete libraries." });
+        if (lib.id === MAIN) return json(res, 400, { error: "The main library can't be deleted." });
+        libraries.remove(lib.id);
+        watcher.refresh();
+        console.log(`library deleted: ${lib.id} (its folder is in data/libraries/.deleted/)`);
+        return json(res, 200, { ok: true });
+    }
+
+    if (path === "/api/libraries/roles" && req.method === "POST") {
+        const body = await readBody(req);
+        const w = whoIs(req);
+        if (!mayAdminister(lib, w.account)) return json(res, 403, { error: "Only this library's admins can give roles." });
+        const account = accounts.get(str(body.account, 64));
+        if (!account) return json(res, 404, { error: "No such account." });
+        const roles = cleanRoles(body.roles);
+        if (roles.length) lib.roles[account.id] = roles;
+        else delete lib.roles[account.id];
+        libraries.save();
+        return json(res, 200, directory(lib, w));
+    }
+
+    if (path === "/api/libraries/groups" && req.method === "POST") {
+        const body = await readBody(req);
+        const w = whoIs(req);
+        if (!mayAdminister(lib, w.account)) return json(res, 403, { error: "Only this library's admins can change its groups." });
+        const id = str(body.id, 64);
+        if (body.delete === true) {
+            lib.groups = lib.groups.filter(g => g.id !== id);
+        } else {
+            const members = Array.isArray(body.members) ? [...new Set(body.members.filter((m): m is string => typeof m === "string" && !!accounts.get(m)))] : undefined;
+            const name = str(body.name, 80).trim();
+            const group = lib.groups.find(g => g.id === id);
+            if (group) {
+                if (name) group.name = name;
+                if (members) group.members = members;
+            } else {
+                if (!name) return json(res, 400, { error: "A group needs a name." });
+                if (lib.groups.length >= 200) return json(res, 400, { error: "This library can't take more groups." });
+                lib.groups.push({ id: `g-${randomBytes(4).toString("hex")}`, name, members: members ?? [] });
+            }
+        }
+        libraries.save();
+        return json(res, 200, directory(lib, w));
+    }
+
+    // what a joining phone needs to be told, for a library this browser may open
+    const w = whoIs(req);
+    const open = mayOpen(lib, w.account, w.session);
+
+    // the whole library as one zip, for anyone who may open it (You → Export the library)
+    if (path === "/api/export") {
+        if (!open) return locked(res, lib);
+        const identity = identityOf(lib);
+        const skip = log.notFor(w.account?.id ?? null, identity);
+        const cat = lib.id === MAIN ? catalog() : { stewards: [], ops: [] };
+        const ops = [...cat.ops, ...log.log.filter(o => !skip(o))];
+        const fileFor = (doc: { hash?: string, url?: string }) => {
+            if (doc.url && !/^[a-z]+:/i.test(doc.url)) {
+                const f = join(STATIC, normalize(doc.url).replace(/^([/\\])+/, ""));
+                if (f.startsWith(STATIC + sep) && existsSync(f)) return f;
+            }
+            if (doc.hash && HASH.test(doc.hash) && existsSync(join(MEDIA, doc.hash))) return join(MEDIA, doc.hash);
+            return null;
+        };
+        const day = new Date().toISOString().slice(0, 10);
+        const people = {
+            viewer: w.account?.id ?? "", stewards: [...cat.stewards, ...stewardsOf(lib, accounts.list())], identity,
+            accounts: Object.fromEntries(accounts.list().map(a => [a.id, a.name]))
+        };
+        console.log(`export of ${lib.id}: ${ops.length} ops`);
+        await sendZip(res, `osl-${lib.id === MAIN ? "library" : lib.id}-${day}.zip`, exportEntries(ops, people, fileFor, appVersion() || "?"));
+        return;
+    }
+
     // The one request every device repeats: "what's new since my cursor?" It also
     // says who is asking and what they have open, which is all presence needs.
     if (path === "/api/ops" && req.method === "GET") {
-        const after = position(url.searchParams.get("after"));
+        if (!open) return locked(res, lib);
+        const after = log.position(url.searchParams.get("after"));
         const user = (url.searchParams.get("user") ?? "").slice(0, 64);
-        if (user) board.hello(user, (url.searchParams.get("viewing") ?? "").slice(0, 200), Date.now());
-        return json(res, 200, { ops: log.slice(after), cursor: cursorNow(), presence: board.snapshot(Date.now()), node: NODE });
+        // a signed-in device is only "here" when its own account is
+        const owner = user ? accounts.ownerOf(user) : undefined;
+        if (user && (!owner || owner === w.account?.id)) log.board.hello(user, (url.searchParams.get("viewing") ?? "").slice(0, 200), Date.now());
+        const identity = identityOf(lib);
+        const viewer = w.account?.id ?? null;
+        const skip = log.notFor(viewer, identity);
+        let ops = log.log.slice(after).filter(o => !skip(o));
+        // someone who may have been let into a collection since: send what was in it
+        const access = `${log.accessRevision}.${libraries.revision}`;
+        if (viewer && url.searchParams.get("access") !== access) {
+            const have = new Set(ops.map(o => o.id));
+            ops = [...log.sharedWith(viewer, identity).filter(o => !have.has(o.id)), ...ops];
+        }
+        return json(res, 200, {
+            ops, cursor: log.cursorNow(), presence: log.board.snapshot(Date.now()), node: log.node,
+            directory: libraries.revision, access
+        });
     }
 
     if (path === "/api/suggestions" && req.method === "POST") {
@@ -467,50 +772,53 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
     if (path === "/api/pair" && req.method === "POST") {
         const body = await readBody(req) as { code?: unknown, role?: unknown };
-        const who = req.socket.remoteAddress ?? "?";
-        const strikes = wrongCodes.get(who);
-        if (strikes && strikes.count >= 5 && strikes.until > Date.now()) {
-            return json(res, 429, { error: "Too many wrong codes. Wait a minute and try again." });
-        }
+        if (struckOut("code:" + ip)) return json(res, 429, { error: "Too many wrong codes. Wait a minute and try again." });
         if (body.role !== "presenter" && body.role !== "station") return json(res, 400, { error: "role must be presenter or station" });
         if (body.code !== PAIR_CODE) {
-            wrongCodes.set(who, { count: (strikes?.count ?? 0) + 1, until: Date.now() + 60_000 });
+            strike("code:" + ip);
             return json(res, 403, { error: "That isn't the code on the library's screen." });
         }
-        wrongCodes.delete(who);
+        strikes.delete("code:" + ip);
         console.log(`paired a ${body.role}`);
         return json(res, 200, { role: body.role, token: pair(body.role) });
     }
 
     if (path === "/api/showing" && req.method === "POST") {
         const body = await readBody(req) as { token?: unknown, documentId?: unknown, user?: unknown };
-        if (!hasRole(body.token, "presenter")) return json(res, 403, { error: "This device isn't paired as a presenter." });
-        if (body.documentId === null || body.documentId === "") board.showing = null;
+        const p = whoIs(req, body.token);
+        if (!open) return locked(res, lib);
+        if (!mayPresent(lib, p.account, p.paired)) return json(res, 403, { error: "This device isn't paired as a presenter." });
+        if (body.documentId === null || body.documentId === "") log.board.showing = null;
         else if (typeof body.documentId === "string" && body.documentId.length <= 200) {
-            board.showing = { documentId: body.documentId, by: String(body.user ?? "").slice(0, 64), since: new Date().toISOString() };
+            log.board.showing = { documentId: body.documentId, by: String(body.user ?? "").slice(0, 64), since: new Date().toISOString() };
         } else return json(res, 400, { error: "expected { documentId }" });
-        return json(res, 200, { showing: board.showing });
+        return json(res, 200, { showing: log.board.showing });
     }
 
     if (path === "/api/upload" && req.method === "POST") {
+        if (!open) { req.resume(); return locked(res, lib); }
+        if (!mayUpload(lib, w.account, w.paired)) { req.resume(); return json(res, 403, { error: "Adding documents to this library isn't open to everyone." }); }
         const sent = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
         const type = MIME.test(sent) ? sent : "application/octet-stream";
-        const station = hasRole(req.headers["x-osl-token"], "station");
         if (Number(req.headers["content-length"] ?? 0) > MAX_UPLOAD) { req.resume(); return json(res, 413, { error: tooLarge(MAX_UPLOAD) }); }
         const saved = await receiveUpload(req, type, MAX_UPLOAD, LOOKS[type]);
-        console.log(`${station ? "station" : "a device"} uploaded ${saved.hash.slice(0, 15)}… (${saved.size} bytes, ${type})`);
+        log.hashes.add(saved.hash);    // so whoever may open this library may fetch it, before the op arrives
+        console.log(`${w.paired.station ? "station" : "a device"} uploaded ${saved.hash.slice(0, 15)}… to ${lib.id} (${saved.size} bytes, ${type})`);
         return json(res, 200, { ...saved, fileType: type });
     }
 
     if (path === "/api/ops" && req.method === "POST") {
+        if (!open) return locked(res, lib);
         const body = await readBody(req) as { ops?: unknown };
         if (!Array.isArray(body.ops)) return json(res, 400, { error: "expected { ops: [...] }" });
-        const result = accept(body.ops);
-        if (result.added) console.log(`+${result.added} ops (total ${log.length})`);
+        const result = log.accept(body.ops, authorRule(lib, w));
+        if (result.added) console.log(`+${result.added} ops in ${lib.id} (total ${log.log.length})`);
         return json(res, 200, result);
     }
 
     if (path === "/api/media" && req.method === "POST") {
+        if (!open) return locked(res, lib);
+        if (!mayUpload(lib, w.account, w.paired)) return json(res, 403, { error: "Adding documents to this library isn't open to everyone." });
         const body = await readBody(req) as { hash?: unknown, data?: unknown };
         if (typeof body.hash !== "string" || !HASH.test(body.hash) || typeof body.data !== "string") {
             return json(res, 400, { error: "expected { hash, data }" });
@@ -519,6 +827,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         if (!m) return json(res, 400, { error: "data must be a base64 data URL" });
         writeFileSync(join(MEDIA, body.hash), Buffer.from(m[2], "base64"));
         writeFileSync(join(MEDIA, body.hash + ".type"), m[1]);
+        log.hashes.add(body.hash);
         return json(res, 200, { ok: true });
     }
 
@@ -526,17 +835,22 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
     if (path === "/ca.pem") return serveCa(res);
 
-    // media people uploaded from their phones
+    // media people uploaded: held once for every library, given to whoever may open one that has it
     if (path.startsWith("/media/")) {
         const hash = path.slice("/media/".length);
         const file = join(MEDIA, hash);
         if (!HASH.test(hash) || !existsSync(file)) return json(res, 404, { error: "not found" });
+        const here = libraries.list().filter(l => libraries.log(l.id).hashes.has(hash));
+        if (!here.some(l => mayOpen(l, w.account, w.session))) {
+            return here.length ? locked(res, here[0]) : json(res, 404, { error: "not found" });
+        }
         const type = existsSync(file + ".type") ? readFileSync(file + ".type", "utf8") : "application/octet-stream";
         // An uploaded file never runs as a page on the library's address: the sandbox
         // stops scripts if someone opens it directly (images, audio and fetches in the
         // app don't notice it), and types the browser shouldn't open are downloaded.
+        // A protected library's files aren't kept by anything in between.
         sendFile(req, res, file, type, {
-            "cache-control": "public, max-age=31536000, immutable",
+            "cache-control": here.some(l => !l.password) ? "public, max-age=31536000, immutable" : "private, max-age=31536000, immutable",
             "x-content-type-options": "nosniff",
             "content-security-policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
             ...(!INLINE.test(type) && { "content-disposition": "attachment" })
@@ -549,6 +863,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const file = join(STATIC, rel);
     if (!file.startsWith(STATIC + sep) || !existsSync(file) || !statSync(file).isFile()) {
         return json(res, 404, { error: "not found" });
+    }
+    // the main library's catalog and its files are the main library's: protected with it
+    if ((rel === "catalog.json" || rel.startsWith("library" + sep)) && !mayOpen(libraries.get(MAIN)!, w.account, w.session)) {
+        return locked(res, libraries.get(MAIN)!);
     }
     const noCache = rel === "sw.js" || rel === "index.html" || rel === "catalog.json" || rel === "app.js" || rel === "styles.css";
     serveFile(req, res, file, noCache ? { "cache-control": "no-cache" } : {});
@@ -608,11 +926,13 @@ server.listen(PORT, "0.0.0.0", () => {
     const scheme = secure ? "https" : "http";
     // the version a drop point must match (npm run build:firmware prints its own)
     const version = appVersion() || "?";
-    console.log(`\nOSL node running — ${log.length} ops in the log, app version ${version}${radio ? `, radio on ${process.env.RADIO_PORT}` : ""}\n`);
+    const others = libraries.list().length - 1;
+    console.log(`\nOSL node running — ${main.log.length} ops in the log${others ? ` (and ${others} other librar${others === 1 ? "y" : "ies"})` : ""}, app version ${version}${radio ? `, radio on ${process.env.RADIO_PORT}` : ""}\n`);
     console.log(`  this laptop:  ${scheme}://localhost:${PORT}`);
     for (const a of joinAddresses(scheme)) console.log(`  phones:       ${a}`);
     console.log(`  big screen:   ${scheme}://localhost:${PORT}/#/present`);
     console.log(`\n  Pairing code: ${PAIR_CODE}   (You → Pair this device, to present or as the digitization station)`);
+    if (!accounts.count) console.log(`  No accounts yet: the first one made (You → Account) is the node admin, and needs this code.`);
     const waiting = existsSync(SUGGESTIONS) ? readFileSync(SUGGESTIONS, "utf8").split("\n").filter(Boolean).length : 0;
     console.log(`  Suggestions:  ${waiting} in the box. Read them at /#/suggestions with the key ${suggestionsKey()}  (or data/suggestions.jsonl)`);
     if (secure) {

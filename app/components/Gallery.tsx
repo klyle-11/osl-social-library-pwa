@@ -12,7 +12,7 @@ export function Gallery() {
     const kind = medium.value;
     const fmt = format.value;
     const sort = sortBy.value;
-    const uploader = (doc: LibraryDocument) => doc.user === "steward" ? "The library" : v.names[doc.user] ?? displayName(doc.user, v.names, me);
+    const uploader = (doc: LibraryDocument) => displayName(doc.user, v, me);
 
     const shown = v.documentOrder.filter(id => {
         const doc = v.documents[id];
@@ -63,7 +63,7 @@ export function Gallery() {
                 </div>
                 {others.length > 0 && (
                     <p class="gallery__people">
-                        {listPeople(others, v.names)} {others.length === 1 ? "is" : "are"} also online.
+                        {listPeople(others, v)} {others.length === 1 ? "is" : "are"} also online.
                     </p>
                 )}
             </div>

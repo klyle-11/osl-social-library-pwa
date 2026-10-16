@@ -5,8 +5,12 @@
 import { createReadStream, statSync } from "node:fs";
 import { crc32 } from "node:zlib";
 import type { ServerResponse } from "node:http";
-import type { Op } from "../core/types";
+import type { Identity, Op } from "../core/types";
 import { buildViews } from "../core/views";
+import { personOf } from "../core/access";
+
+// who is asking (the ops are already only what they may see) and who everyone is
+export type ExportPeople = { viewer: string, stewards: string[], identity: Identity, accounts: Record<string, string> };
 
 export type ZipEntry = { name: string, data?: Buffer, file?: string };
 
@@ -23,9 +27,14 @@ function safeName(title: string): string {
 }
 
 // Everything readable, plus the raw log. fileFor says where a document's bytes are on disk.
-export function exportEntries(ops: Op[], stewards: string[], fileFor: (doc: { hash?: string, url?: string }) => string | null, appVersion: string): ZipEntry[] {
-    const v = buildViews(ops, { viewer: "", stewards });
-    const who = (user: string) => user === "steward" ? "The library" : v.names[user] ?? `Guest ${user.replace(/^d-/, "").slice(0, 4)}`;
+export function exportEntries(ops: Op[], people: ExportPeople, fileFor: (doc: { hash?: string, url?: string }) => string | null, appVersion: string): ZipEntry[] {
+    const v = buildViews(ops, { viewer: people.viewer, stewards: people.stewards, identity: people.identity });
+    const who = (user: string) => {
+        const account = people.accounts[personOf(people.identity, user)];
+        if (account) return account;
+        if (user === "steward" || user === "folder") return "The library";
+        return v.names[user] ? `${v.names[user]} (Guest)` : `Guest ${user.replace(/^d-/, "").slice(0, 4)}`;
+    };
     const entries: ZipEntry[] = [];
     const used = new Set<string>();
 

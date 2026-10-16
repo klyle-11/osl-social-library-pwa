@@ -5,7 +5,8 @@ import { carry } from "../adapters/carry";
 import { fileUrl } from "./format";
 import { thumbnailUrl } from "./components/Thumbnail";
 import { href, route } from "./route";
-import { follow, lastSync, nodeRole, paused, pending, presence, relayed, syncState, views, viewer } from "./state";
+import { follow, lastSync, locked, nodeRole, paused, pending, presence, relayed, syncState, views } from "./state";
+import { LockedError } from "../adapters/http-transport";
 
 declare const OSL_PDFJS: string;
 
@@ -33,8 +34,11 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
+    // one round at a time: a nudge during a round makes another straight after, never a second loop
+    let running = false, again = false;
     const run = async () => {
         clearTimeout(timer);
+        if (running) { again = true; return; }
         // a hidden tab stops polling; the node forgets it within a few seconds, which is the truth
         if (document.visibilityState !== "visible") return;
         if (paused.value) { syncState.value = "paused"; return; }
@@ -43,21 +47,33 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
         transport.hello = { user: store.user, viewing: r.view === "document" ? r.id : "" };
         // only say "Syncing…" when recovering, so the header doesn't flicker every tick
         if (syncState.value !== "synced") syncState.value = "syncing";
+        running = true;
+        again = false;
         try {
             await store.sync(transport);
             nodeRole.value = transport.role;
             syncState.value = "synced";
             lastSync.value = new Date().toISOString();
             failures = 0;
-        } catch {
-            syncState.value = navigator.onLine ? "no-node" : "offline";
+            locked.value = false;
+        } catch (e) {
+            if (e instanceof LockedError) {
+                // the node wants this library's password: nothing to retry until someone gives it
+                syncState.value = "locked";
+                locked.value = true;
+            } else {
+                syncState.value = navigator.onLine ? "no-node" : "offline";
+            }
             presence.value = { online: [], showing: null };
             failures++;
+        } finally {
+            running = false;
         }
         pending.value = store.outbox.length;
         relayed.value = store.relayed.length;
         // back off while the node is unreachable, so a phone that left isn't hammering the air
-        timer = setTimeout(run, Math.min(TICK_MS * 2 ** failures, SLOWEST_MS));
+        clearTimeout(timer);
+        timer = setTimeout(run, again ? 300 : Math.min(TICK_MS * 2 ** failures, SLOWEST_MS));
     };
     const soon = () => { clearTimeout(timer); timer = setTimeout(run, 300); };
     wake = soon;
@@ -90,11 +106,10 @@ export function startCarrying() {
     let last = "";
     effect(() => {
         const v = views.value;
-        const me = viewer.value;
         const urls = new Set<string>();
         let pdfs = false;
         for (const c of Object.values(v.collections)) {
-            if (c.owner !== me) continue;
+            if (!c.mine) continue;
             for (const id of c.documentIds) {
                 const doc = v.documents[id];
                 const url = doc && fileUrl(doc);

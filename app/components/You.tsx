@@ -1,11 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Role } from "../../adapters/http-transport";
 import { remember } from "../../adapters/device";
-import { attempt, syncState, tell, tokens, useLibrary, useTransport, views, viewer, nodeRole } from "../state";
+import { attempt, directory, syncState, tell, tokens, useLibrary, useTransport, views, viewer, nodeRole } from "../state";
 import { href } from "../route";
 import { canCarry, carried } from "../../adapters/carry";
 import { fileUrl } from "../format";
 import { THEMES, theme } from "../theme";
+import { apiPath } from "../library";
 
 // Name (optional), taking the library home, and saving your work as a file.
 export function You() {
@@ -14,23 +15,30 @@ export function You() {
     const me = viewer.value;
     const [name, setName] = useState(v.names[me] ?? "");
     const mineCount = store.ops.filter(o => o.user === me).length;
+    const account = directory.value?.me;
 
     return (
         <section class="you">
             <h2 class="you__title">You</h2>
 
-            <form class="you__name" onSubmit={e => {
+            <p class="you__text you__account">
+                {account
+                    ? <>Signed in as <span class="mark">{account.name}</span>. <a href={href({ view: "account" })}>Your account</a></>
+                    : <>You're a guest: your name shows with "(Guest)". <a href={href({ view: "account" })}>Sign in or make an account</a> (optional).</>}
+            </p>
+
+            {!account && <form class="you__name" onSubmit={e => {
                 e.preventDefault();
                 if (!name.trim()) return;
                 attempt(async () => { await store.setName(name); tell("Name saved."); });
             }}>
                 <label class="you__name-label">
-                    Your name (optional — you can stay a guest)
+                    Your name as a guest (optional)
                     <input class="you__name-input" value={name} maxLength={80}
                         onInput={e => setName((e.currentTarget as HTMLInputElement).value)} />
                 </label>
                 <button class="you__name-save" type="submit">Save</button>
-            </form>
+            </form>}
 
             <section class="you__section">
                 <h3 class="you__heading">Take it with you</h3>
@@ -65,7 +73,7 @@ export function You() {
                     in it (they never leave their phones).
                 </p>
                 {nodeRole.value === "library" && syncState.value === "synced"
-                    ? <a class="you__button you__export" href="api/export" download>Export everything (.zip)</a>
+                    ? <a class="you__button you__export" href={apiPath("export")} download>Export everything (.zip)</a>
                     : <p class="you__text you__export-off">Connect to the library's Wi-Fi to export it.</p>}
             </section>
 
@@ -109,10 +117,9 @@ function InstallHelp() {
 
 function CarryStatus() {
     const v = views.value;
-    const me = viewer.value;
     const urls = new Set<string>();
     for (const c of Object.values(v.collections)) {
-        if (c.owner !== me) continue;
+        if (!c.mine) continue;
         for (const id of c.documentIds) {
             const d = v.documents[id];
             const u = d && fileUrl(d);

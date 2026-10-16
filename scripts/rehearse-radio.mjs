@@ -64,8 +64,11 @@ async function phone(name, device) {
   const p = { name, ctx, near: LIB };
   await ctx.route(`${ORIGIN}/**`, async (route) => {
     const u = new URL(route.request().url());
+    // a real phone's Origin is the address it reached, so it matches the node's Host
+    const headers = { ...route.request().headers() };
+    if (headers.origin) headers.origin = p.near;
     try {
-      const response = await route.fetch({ url: p.near + u.pathname + u.search });
+      const response = await route.fetch({ url: p.near + u.pathname + u.search, headers });
       await route.fulfill({ response });
     } catch {
       await route.abort('connectionrefused');

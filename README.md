@@ -41,9 +41,16 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Storage in IndexedDB; save and load your work as a file | Works |
 | Offline install and offline reopening on phones | **Needs the domain** (works on `localhost` only) |
 | Radio link and drop point | Rehearsed on a computer (`npm run rehearse:radio`); drop point not yet built for the boards (see below) |
+| Several libraries on one node, each with its own notes, collections and storage on the phone; picked in the header (`?library=` in the address) | Rehearsed (`npm run rehearse:people`) |
+| Password protection for a library, at creation or later; a lock screen until it's entered; a new password closes it again everywhere | Rehearsed |
+| Optional accounts (one per node; scrypt), guests named with "(Guest)"; signing in links the device, so an account's devices share Kept and collections | Rehearsed |
+| Roles per library (admin, steward, presenter, digitizer, uploader, member) and groups, on the Manage page; the node admin manages accounts | Rehearsed |
+| Who may add documents, any combination (anyone, signed in, members, uploaders, digitizers, presenters); enforced at the library | Rehearsed |
+| A watch folder per library: files put in it on the node become documents | Tried with `curl` and a scratch folder |
+| Collections: who may see (everyone, only me, people and groups) and who may add; private ones never leave the library for anyone else | Rehearsed |
 | Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
 
-Checked with 29 core tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices. It has **not** been run on a real phone or on the Pi yet.
+Checked with 85 unit tests (core and node), `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (24 checks) and `npm run rehearse:people` (27 checks: libraries, passwords, accounts, roles, private and shared collections). It has **not** been run on a real phone or on the Pi yet.
 
 ## Run it
 
@@ -66,6 +73,8 @@ The node prints its addresses and a **pairing code**:
 | `npm test` | Core tests |
 | `npm run rehearse` | Rehearse the device tests in headless Chrome against a scratch node (about three minutes; leaves `data/` alone) |
 | `npm run rehearse:radio` | Rehearse gate seven: the library, a drop point and the radio, from the firmware's own code (Linux, macOS) |
+| `npm run rehearse:people` | Rehearse libraries, accounts, roles and private collections: two laptops, a phone and a guest |
+| `OSL_NAME="Maroon library" npm start` | Name the main library (only when it's first made) |
 | `npm run test:firmware` | The firmware's tests, on this computer |
 | `npm run build:firmware` | Build, then put the app into `firmware/data/` for a drop point |
 | `RADIO_PORT=/dev/ttyACM0 npm start` | Run the node with the LoRa modem plugged in |
@@ -79,7 +88,9 @@ The node prints its addresses and a **pairing code**:
 
 **To add documents by hand:** drop files in `library/files/`, run `npm run catalog`, and edit the new entries in `library/documents.json`.
 
-**Data:** contributions are in `data/ops.jsonl` and uploads in `data/media/`. Delete `data/` to start clean; phones that were open catch up from the new log by themselves (the cursor carries the log's id, in `data/log-id`; if you copy `data/` to start a second node, delete `log-id` in the copy). A last line cut off by a power cut is skipped and left in the file, and the node still starts.
+**Accounts and libraries:** the first account (You → Account) looks after the node; making it needs the pairing code. It makes libraries (header → the library's name → Libraries) and hands out roles (Manage). Details: [docs/libraries-and-accounts.md](docs/libraries-and-accounts.md).
+
+**Data:** contributions are in `data/ops.jsonl` and uploads in `data/media/`. Other libraries' logs are in `data/libraries/<id>/`; libraries' settings in `data/libraries.json`, accounts in `data/accounts.json` and browsers' sessions in `data/sessions.json` (keep those three private: they're written readable by the node's user only). Delete `data/` to start clean; phones that were open catch up from the new log by themselves (the cursor carries the log's id, in `data/log-id`; if you copy `data/` to start a second node, delete `log-id` in the copy). A last line cut off by a power cut is skipped and left in the file, and the node still starts.
 
 ## On the Raspberry Pi
 
@@ -131,6 +142,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - **W-D8. Custom LoRa firmware, ops only.** The Pi is the only home node; drop points are ESP32-only; secondary drop points will relay through the main one. Not compatible with Meshtastic. *Reaffirmed 2026-10-16:* the first deployment is the Pi and one drop point about a mile away, which our own link covers. Reticulum (with LXMF propagation nodes) was considered for several drop points; it would make each drop point a small Linux computer with an RNode, so it is in the parking lot until there are more drop points, or until microReticulum runs on an ESP32 alone.
 - **W-D9. Sync is managed inside the app** (the Sync screen), not a separate app.
 - **W-D11. Paper is the default look.** An archive's page: `#fffffc` and ink, hairline rules, one plain sans-serif, small capitals for section labels (after Monoskop), with Selenized's colours. Selenized light, dark and black and the first Maroon colours are on You → Appearance, kept per device, so the big screen can be dark while phones stay on paper. Every theme's text colours pass 4.5:1.
+- **W-D12. Libraries, accounts and roles.** A node holds several libraries, each with its own log; files are held once and handed to whoever may open a library that has them. Accounts are optional and per node; ops keep their device ids, and the node publishes which device is whose account, so the merge and the drop point don't change. Roles are per library. A protected library's password is PBKDF2 so a drop point can check it; accounts are scrypt. A collection that isn't for everyone is sent only to the people it's for, and not by radio. Over the radio the library takes a drop point's word for who wrote an op (a known gap). In full: [docs/libraries-and-accounts.md](docs/libraries-and-accounts.md).
 - **W-D10. People get the app at the Pi; drop points are for syncing.** The Pi has the library, the files, pairing and the big screen; a drop point is a write-only inbox with 1.5 MB of flash. Both answer at the **same address** (phones keep their data per address), and a drop point always carries the **exact build the Pi serves**: a phone moving between two different builds would switch app versions each time. Before the domain, that address is the Pi's fixed IP and port over plain http, which a drop point can take on its own Wi-Fi network; after it, the domain over HTTPS.
 - **Hardware:** Raspberry Pi 5; one LilyGO T3-S3 v1.3 (SX1262); three Seeed XIAO ESP32S3 with Wio-SX1262; all 915 MHz.
 

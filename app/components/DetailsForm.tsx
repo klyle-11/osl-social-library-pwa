@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import type { DescribeField } from "../../core/types";
-import { attempt, stewards, tell, useLibrary, views, viewer } from "../state";
+import { attempt, identity, isMe, isSteward, stewards, tell, useLibrary, viewer, views } from "../state";
 import { formatEditors, mayEdit, parseEditors, type Editors } from "../../core/views";
 import { MEDIUMS, displayName } from "../format";
 
@@ -20,9 +20,9 @@ export function DetailsForm({ id }: { id: string }) {
     const v = views.value;
     const me = viewer.value;
     const doc = v.documents[id];
-    const owner = doc.user === me || stewards.value.includes(me);
-    if (!mayEdit(doc, me, stewards.value)) {
-        const who = displayName(doc.user, v.names, me);
+    const owner = isMe(doc.user) || isSteward();
+    if (!mayEdit(doc, me, stewards.value, identity.value)) {
+        const who = displayName(doc.user, v, me);
         const e = parseEditors(doc.properties.editors);
         return (
             <p class="details-form__locked">
@@ -60,7 +60,7 @@ function DetailsFields({ id }: { id: string }) {
     const count = Object.keys(changes).length;
 
     const credit = (field: DescribeField) => credits[field] && (
-        <span class="details-form__credit">from {displayName(credits[field]!.user, v.names, me)}</span>
+        <span class="details-form__credit">from {displayName(credits[field]!.user, v, me)}</span>
     );
 
     return (
@@ -105,7 +105,9 @@ function EditorsChooser({ id }: { id: string }) {
     const current = parseEditors(doc.properties.editors) ?? { kind: "everyone" as const };
     const [choice, setChoice] = useState<Editors>(current);
     useEffect(() => setChoice(current), [id, doc.properties.editors]);
-    const candidates = v.people.filter(u => u !== doc.user && u !== "steward");
+    // people, not devices: an account once, whichever device it used; the uploader isn't asked
+    const owner = v.devices[doc.user] ?? doc.user;
+    const candidates = v.people.filter(u => u !== owner && u !== "steward" && u !== "folder");
     const chosen = choice.kind === "people" ? choice.users : [];
     const changed = formatEditors(choice) !== formatEditors(current);
 
@@ -123,7 +125,7 @@ function EditorsChooser({ id }: { id: string }) {
         }}>
             <fieldset class="editors__set">
                 <legend class="editors__legend">Who can change these details</legend>
-                {([["everyone", "Everyone"], ["owner", doc.user === me ? "Only me" : `Only ${displayName(doc.user, v.names, me)}`], ["people", "People I choose"]] as [Editors["kind"], string][]).map(([kind, label]) => (
+                {([["everyone", "Everyone"], ["owner", isMe(doc.user) ? "Only me" : `Only ${displayName(doc.user, v, me)}`], ["people", "People I choose"]] as [Editors["kind"], string][]).map(([kind, label]) => (
                     <label class="editors__option" key={kind}>
                         <input type="radio" name={`editors-${id}`} checked={choice.kind === kind} onChange={() => pick(kind)} /> {label}
                     </label>
@@ -134,8 +136,8 @@ function EditorsChooser({ id }: { id: string }) {
                             {candidates.map(u => (
                                 <li key={u}>
                                     <label class="editors__person">
-                                        <input type="checkbox" checked={chosen.includes(u)} onChange={() => toggle(u)} /> {displayName(u, v.names, me)}
-                                        <span class="editors__device"> · device {u.replace(/^d-/, "").slice(0, 8)}</span>
+                                        <input type="checkbox" checked={chosen.includes(u)} onChange={() => toggle(u)} /> {displayName(u, v, me)}
+                                        {!v.accounts[u] && <span class="editors__device"> · device {u.replace(/^d-/, "").slice(0, 8)}</span>}
                                     </label>
                                 </li>
                             ))}

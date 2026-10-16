@@ -1,9 +1,20 @@
 import type { LibraryDocument } from "../core/types";
 
-export function displayName(user: string, names: Record<string, string>, me: string): string {
-    if (user === me) return names[user] ? `${names[user]} (you)` : "You";
-    if (names[user]) return names[user];
-    if (user === "steward") return "The library";
+// Who someone is, for the screen: everything a view knows about people (core/views.ts).
+export type People = { names: Record<string, string>, devices: Record<string, string>, accounts: Record<string, string> };
+
+// An account's name as it is; a guest's with "(Guest)", so nobody passes for someone with
+// an account. A device signed in to an account is that account. `me` is this device.
+export function displayName(user: string, p: People, me: string): string {
+    const person = p.devices[user] ?? user;
+    const mine = person === (p.devices[me] ?? me);
+    const account = p.accounts[person];
+    if (account) return mine ? `${account} (you)` : account;
+    if (user === "steward" || user === "folder") return "The library";
+    const name = p.names[user];
+    if (mine) return name ? `${name} (you)` : "You";
+    if (name) return `${name} (Guest)`;
+    if (person.startsWith("a-")) return "Someone";
     return `Guest ${user.replace(/^d-/, "").slice(0, 4)}`;
 }
 
@@ -31,9 +42,11 @@ export function fileUrl(doc: LibraryDocument): string | null {
     return null;
 }
 
-// "Ama, Rosa and 2 guests": named people first, guests counted
-export function listPeople(users: string[], names: Record<string, string>): string {
-    const named = users.filter(u => names[u]).map(u => names[u]);
+// "Ama, Rosa (Guest) and 2 guests": people with names first, everyone else counted
+export function listPeople(users: string[], p: People): string {
+    const nameOf = (u: string) => p.accounts[p.devices[u] ?? u] ?? (p.names[u] ? `${p.names[u]} (Guest)` : null);
+    const named = [...new Set(users.map(nameOf).filter((n): n is string => !!n))];
+    users = [...new Set(users.map(u => p.devices[u] ?? u))];
     const guests = users.length - named.length;
     const parts = [...named];
     if (guests === 1) parts.push(named.length ? "a guest" : "A guest");

@@ -11,6 +11,7 @@ const STATE_TEXT = {
     synced: "Everything here has reached the library.",
     offline: "This device is offline. Your work is saved here and will send when you're back.",
     paused: "Syncing is paused. Your work stays on this device until you resume.",
+    locked: "This library is protected. Your work stays on this device until you enter its password or sign in.",
     droppoint: "Handed in at a drop point. From here it goes on to the library by radio."
 };
 
@@ -24,6 +25,7 @@ function summary(op: Op, title: (id: string) => string): string {
         case "name-collection": return `Named a collection “${op.name}”`;
         case "name-user": return `Set your name to ${op.name}`;
         case "hide": return "Hid a contribution";
+        case "collection-access": return "Changed who may see or add to a collection";
     }
 }
 

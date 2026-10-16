@@ -4,13 +4,15 @@ import { signal } from "@preact/signals";
 export type Route =
     | { view: "gallery" } | { view: "activity" } | { view: "collections" } | { view: "add" } | { view: "you" }
     | { view: "sync" } | { view: "present" } | { view: "droppoints" } | { view: "suggest" } | { view: "suggestions" }
+    | { view: "account" } | { view: "libraries" } | { view: "manage" }
     | { view: "document", id: string } | { view: "collection", id: string };
 
 export function parseRoute(hash: string): Route {
     const [, view = "", id = ""] = hash.replace(/^#/, "").split("/");
     const arg = decodeURIComponent(id);
     switch (view) {
-        case "activity": case "collections": case "add": case "you": case "sync": case "present": case "droppoints": case "suggest": case "suggestions": return { view };
+        case "activity": case "collections": case "add": case "you": case "sync": case "present": case "droppoints": case "suggest": case "suggestions":
+        case "account": case "libraries": case "manage": return { view };
         case "document": return arg ? { view, id: arg } : { view: "gallery" };
         case "collection": return arg ? { view, id: arg } : { view: "collections" };
         default: return { view: "gallery" };

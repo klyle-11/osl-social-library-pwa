@@ -20,7 +20,7 @@ export function Feed() {
 function FeedItem({ entry }: { entry: FeedEntry }) {
     const v = views.value;
     const me = viewer.value;
-    const who = (user: string) => <span class="mark">{displayName(user, v.names, me)}</span>;
+    const who = (user: string) => <span class="mark">{displayName(user, v, me)}</span>;
     const docLink = (id: string) => (
         <a class="feed__document" href={href({ view: "document", id })}>{v.documents[id]?.properties.title ?? "a document"}</a>
     );

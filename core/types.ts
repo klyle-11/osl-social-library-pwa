@@ -9,8 +9,15 @@ type DocumentMedium =
     | "";   // unspecified
 
 type User = {
-    id: string,     // the device id for now (one device = one user)
+    id: string,     // the device id: ops are always written by a device
     name?: string
+};
+
+// Who is who, as the node says (its "directory"): the account each device is signed in
+// as, and the library's groups. A device that isn't listed is a guest, and is its own person.
+type Identity = {
+    devices: Record<string, string>,    // device id -> account id
+    groups: Record<string, string[]>    // group id -> account ids
 };
 
 type DocumentProperties = {
@@ -83,6 +90,15 @@ type Hide = OpBase & {
     target: OpId
 };
 
+// Who may see a collection and who may add to it, set by its owner; latest wins.
+// Each is "everyone", "owner", or "people:<id>,<id>" (accounts "a-…" and groups "g-…").
+type CollectionAccess = OpBase & {
+    type: "collection-access",
+    collectionId: CollectionId,
+    see: string,
+    add: string
+};
+
 // which of a document's properties a person can fill in or correct afterwards
 type DescribeField = "title" | "subtitle" | "author" | "type" | "year" | "description" | "alt" | "thumbnail" | "editors" | "prompts";
 
@@ -102,7 +118,8 @@ type Op =
     | NameCollection
     | NameUser
     | Hide
-    | Describe;
+    | Describe
+    | CollectionAccess;
 
 type OpType = Op["type"];
 
@@ -142,8 +159,8 @@ type Presence = {
 };
 
 export type {
-    Access, DocumentMedium, User, DocumentProperties, OpId, CollectionId,
+    Access, DocumentMedium, User, Identity, DocumentProperties, OpId, CollectionId,
     OpBase, LibraryDocument, Annotation, AddToCollection, RemoveFromCollection,
-    NameCollection, NameUser, Hide, DescribeField, Describe, Op, OpType, Conflict, OpContext,
+    NameCollection, NameUser, Hide, DescribeField, Describe, CollectionAccess, Op, OpType, Conflict, OpContext,
     PresenceEntry, Showing, Presence
 };

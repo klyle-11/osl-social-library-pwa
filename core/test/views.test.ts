@@ -196,3 +196,104 @@ test("a private or hidden note is never a prompt, and unpinning clears them", ()
     assert.deepEqual(v.prompts["d-a:1"].map(n => n.id), [notes[1]]);
     assert.equal(view([...all, pin("d-a:93", "d-a", notes[1]), pin("d-a:94", "d-a", "", 40)]).prompts["d-a:1"], undefined);
 });
+
+// ---- people across devices, and who may see and add to a collection ----
+
+const at = (minute: number) => `2026-10-06T10:${String(minute).padStart(2, "0")}:00Z`;
+const op = (o: Record<string, unknown>) => o as Op;
+// d-a and d-x are both Ama's account a-ama; d-b is Rosa's a-rosa; d-c is a guest.
+// The fixtures have one document (d-a:1); here are two more.
+const doc = (id: string): Op => op({ id, user: "s", timestamp: "2026-10-04T13:00:00Z", type: "document", fileType: "text", properties: { title: id, author: "", type: "" } });
+const shelf = [...all, doc("s:1"), doc("s:2")];
+const identity = { devices: { "d-a": "a-ama", "d-x": "a-ama", "d-b": "a-rosa" }, groups: { "g-club": ["a-rosa"] } };
+const idView = (ops: Op[], viewer: string, stewards: string[] = []) => buildViews(ops, { viewer, stewards, identity });
+const access = (id: string, user: string, collectionId: string, see: string, add: string, minute: number) =>
+    op({ id, user, timestamp: at(minute), type: "collection-access", collectionId, see, add });
+const add = (id: string, user: string, collectionId: string, documentId: string, minute: number) =>
+    op({ id, user, timestamp: at(minute), type: "add-to-collection", collectionId, documentId });
+const remove = (id: string, user: string, collectionId: string, documentId: string, minute: number) =>
+    op({ id, user, timestamp: at(minute), type: "remove-from-collection", collectionId, documentId });
+const named = (id: string, user: string, collectionId: string, name: string, minute: number) =>
+    op({ id, user, timestamp: at(minute), type: "name-collection", collectionId, name });
+
+test("an account's devices are one person: one Kept, and each other's notes are 'mine'", () => {
+    const v = idView([...shelf, add("d-x:1", "d-x", "a-ama/kept", "d-a:1", 1), add("d-a:50", "d-a", "a-ama/kept", "d-a:1", 2)], "d-x");
+    assert.deepEqual(v.collections["a-ama/kept"].documentIds, ["d-a:1"]);
+    assert.equal(v.collections["a-ama/kept"].mine, true);
+    const note: Op = op({ id: "d-a:51", user: "d-a", timestamp: at(3), type: "annotation", target: "d-a:1", body: "from my laptop", access: "public" });
+    assert.equal(idView([...shelf, note], "d-x").threads["d-a:1"].find(n => n.op.id === "d-a:51")?.mine, true);
+});
+
+test("an account's other device may change what the uploader may change", () => {
+    const keep = op({ id: "d-x:2", user: "d-x", timestamp: at(4), type: "describe", target: "d-a:1", field: "editors", value: "owner" });
+    assert.equal(idView([...shelf, keep], "d-c").documents["d-a:1"].properties.editors, "owner");
+    // without the link it's just another device, and ignored
+    assert.equal(view([...shelf, keep]).documents["d-a:1"].properties.editors, undefined);
+});
+
+test("a steward account counts on every one of its devices", () => {
+    const hide = op({ id: "d-x:3", user: "d-x", timestamp: at(5), type: "hide", target: "d-b:1" });
+    assert.equal(idView([...shelf, hide], "d-c", ["a-ama"]).threads["d-a:1"].length, 1);
+    assert.equal(idView([...shelf, hide], "d-c", []).threads["d-a:1"].length, 2);
+});
+
+test("a collection is for everyone to see and only its owner to fill, until the owner says otherwise", () => {
+    const ops = [...shelf, named("d-a:60", "d-a", "a-ama/1", "Shelf", 1), add("d-b:60", "d-b", "a-ama/1", "d-a:1", 2)];
+    const c = idView(ops, "d-c").collections["a-ama/1"];
+    assert.deepEqual(c.documentIds, []);                    // Rosa wasn't asked
+    assert.equal(c.mayAdd, false);
+    assert.equal(c.see.kind, "everyone");
+});
+
+test("people and groups the owner names may add; an add from before they were asked doesn't count", () => {
+    const ops = [...shelf,
+        named("d-a:60", "d-a", "a-ama/1", "Shelf", 1),
+        add("d-b:60", "d-b", "a-ama/1", "s:1", 2),       // too early
+        access("d-a:61", "d-a", "a-ama/1", "everyone", "people:g-club", 3),
+        add("d-b:61", "d-b", "a-ama/1", "d-a:1", 4),
+        add("d-c:60", "d-c", "a-ama/1", "s:2", 5)];      // a guest isn't in the group
+    const v = idView(ops, "d-b");
+    assert.deepEqual(v.collections["a-ama/1"].documentIds, ["d-a:1"]);
+    assert.equal(v.collections["a-ama/1"].mayAdd, true);
+    assert.equal(idView(ops, "d-c").collections["a-ama/1"].mayAdd, false);
+});
+
+test("whoever added a document may take it out; the owner may take out anything; others can't", () => {
+    const base = [...shelf,
+        access("d-a:61", "d-a", "a-ama/1", "everyone", "everyone", 1),
+        add("d-b:61", "d-b", "a-ama/1", "d-a:1", 2),
+        add("d-c:61", "d-c", "a-ama/1", "s:1", 3)];
+    assert.deepEqual(idView([...base, remove("d-c:62", "d-c", "a-ama/1", "d-a:1", 4)], "d-a").collections["a-ama/1"].documentIds, ["d-a:1", "s:1"]);
+    assert.deepEqual(idView([...base, remove("d-b:62", "d-b", "a-ama/1", "d-a:1", 4)], "d-a").collections["a-ama/1"].documentIds, ["s:1"]);
+    assert.deepEqual(idView([...base, remove("d-x:62", "d-x", "a-ama/1", "s:1", 4)], "d-a").collections["a-ama/1"].documentIds, ["d-a:1"]);
+});
+
+test("a private collection is there for its owner only, and not in anyone else's feed", () => {
+    const ops = [...shelf, named("d-a:60", "d-a", "a-ama/1", "Diary", 1), access("d-a:61", "d-a", "a-ama/1", "owner", "owner", 2), add("d-a:62", "d-a", "a-ama/1", "d-a:1", 3)];
+    assert.equal(idView(ops, "d-x").collections["a-ama/1"].name, "Diary");
+    assert.equal(idView(ops, "d-b").collections["a-ama/1"], undefined);
+    assert.equal(idView(ops, "d-b").collectionOrder.includes("a-ama/1"), false);
+    assert.equal(idView(ops, "d-b").feed.some(e => (e.kind === "collect" || e.kind === "collection") && e.op.collectionId === "a-ama/1"), false);
+    assert.equal(idView(ops, "d-b").collectionsByDocument["d-a:1"]?.includes("a-ama/1") ?? false, false);
+});
+
+test("shared with people and groups: they see it, no one else does", () => {
+    const ops = [...shelf, named("d-a:60", "d-a", "a-ama/1", "For the club", 1), access("d-a:61", "d-a", "a-ama/1", "people:g-club", "owner", 2)];
+    assert.ok(idView(ops, "d-b").collections["a-ama/1"]);
+    assert.equal(idView(ops, "d-c").collections["a-ama/1"], undefined);
+});
+
+test("only the owner sets who may see; a malformed setting is ignored", () => {
+    const ops = [...shelf, named("d-a:60", "d-a", "a-ama/1", "Shelf", 1),
+        access("d-b:61", "d-b", "a-ama/1", "owner", "everyone", 2),
+        access("d-a:62", "d-a", "a-ama/1", "friends", "owner", 3)];
+    const c = idView(ops, "d-c").collections["a-ama/1"];
+    assert.equal(c.see.kind, "everyone");
+    assert.equal(c.add.kind, "owner");
+});
+
+test("without an account a guest is their own person, as before", () => {
+    const v = view([...shelf, add("d-b:70", "d-b", "d-b/kept", "s:1", 1)], "d-b");
+    assert.equal(v.collections["d-b/kept"].mine, true);
+    assert.deepEqual(v.collections["d-b/kept"].documentIds, ["d-a:1", "s:1"]);
+});

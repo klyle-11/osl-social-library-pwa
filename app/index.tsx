@@ -7,11 +7,14 @@ import { MemoryStorage } from "../adapters/memory-storage";
 import { HttpTransport } from "../adapters/http-transport";
 import { newDeviceId, now, recall } from "../adapters/device";
 import { persistStorage } from "../adapters/carry";
-import { TransportContext, opLog, pending, stewards, tell, tokens, viewer } from "./state";
+import { effect } from "@preact/signals";
+import { TransportContext, catalogStewards, opLog, pending, tell, tokens, viewer } from "./state";
 import { startCarrying, startSync } from "./sync";
 import { startTheme } from "./theme";
 import { startPlayer } from "./player";
 import { views } from "./state";
+import { MAIN, libraryId, storageName } from "./library";
+import { keptDirectory, startDirectory } from "./people";
 import { Library } from "./components/Library";
 
 declare const OSL_DEV: boolean;   // true only in `npm run dev`; the check is removed from production builds
@@ -29,23 +32,27 @@ async function boot() {
     startTheme();
     startPlayer(id => views.value.documents[id]);
     // this shell's adapters, best first. Nothing above this line of code knows which one it got.
-    const storage: StorageAdapter = await IndexedDBStorage.open().catch(() =>
-        LocalStorageStorage.available() ? new LocalStorageStorage() : new MemoryStorage());
+    // Each library keeps its own (app/library.ts).
+    const storage: StorageAdapter = await IndexedDBStorage.open(storageName()).catch(() =>
+        LocalStorageStorage.available() ? new LocalStorageStorage(libraryId === MAIN ? "osl:" : `osl:lib:${libraryId}:`) : new MemoryStorage());
     const store = new LibraryStore(storage, { now, newDeviceId });
-    const transport = new HttpTransport();
+    const transport = new HttpTransport("api/", libraryId);
     tokens.value = {
         ...(recall("token:presenter") && { presenter: recall("token:presenter")! }),
         ...(recall("token:station") && { station: recall("token:station")! })
     };
+    effect(() => { transport.tokens = Object.values(tokens.value).filter((t): t is string => !!t); });
 
-    const catalog = await loadCatalog();
-    stewards.value = catalog.stewards;
+    // the catalog (library/documents.json) is the main library's
+    const catalog = libraryId === MAIN ? await loadCatalog() : readCatalog(null);
+    catalogStewards.value = catalog.stewards;
     await store.open(catalog.ops);
+    await keptDirectory(store, storage);
 
     viewer.value = store.user;
     opLog.value = store.ops;
     pending.value = store.outbox.length;
-    store.subscribe(() => { opLog.value = store.ops; });
+    store.subscribe(() => { opLog.value = store.ops; viewer.value = store.user; });
 
     // Preact renders beside what's already in the container, so the "Opening the library…"
     // placeholder from index.html goes first
@@ -70,6 +77,7 @@ async function boot() {
     }
 
     startCarrying();
+    void startDirectory(store, transport, storage);
     void startSync(store, transport);
 }
 

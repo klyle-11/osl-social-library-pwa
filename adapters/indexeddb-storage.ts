@@ -20,11 +20,12 @@ export class IndexedDBStorage implements StorageAdapter {
         this.db = db;
     }
 
-    // rejects where the browser blocks IndexedDB (some private modes), so callers can fall back
-    static open(): Promise<IndexedDBStorage> {
+    // Rejects where the browser blocks IndexedDB (some private modes), so callers can fall back.
+    // Each library has its own database: "osl" is the main one.
+    static open(name = NAME): Promise<IndexedDBStorage> {
         return new Promise((resolve, reject) => {
             if (typeof indexedDB === "undefined") { reject(new Error("no IndexedDB")); return; }
-            const r = indexedDB.open(NAME, VERSION);
+            const r = indexedDB.open(name, VERSION);
             r.onupgradeneeded = () => {
                 const db = r.result;
                 if (!db.objectStoreNames.contains("ops")) db.createObjectStore("ops", { keyPath: "id" });

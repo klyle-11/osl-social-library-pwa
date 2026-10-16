@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Access } from "../../core/types";
-import { answering, attempt, presence, stewards, useLibrary, views, viewer } from "../state";
+import { answering, attempt, isMe, isSteward, presence, useLibrary, viewer, views } from "../state";
 import { PinButton } from "./AnnotationThread";
 import { displayName, listPeople, when } from "../format";
 
@@ -44,11 +44,11 @@ export function NotesDock({ documentId }: { documentId: string }) {
 
     const thread = v.threads[documentId] ?? [];
     const doc = v.documents[documentId];
-    const mayPin = !!doc && (doc.user === me || stewards.value.includes(me));
+    const mayPin = !!doc && (isMe(doc.user) || isSteward());
     const others = presence.value.online.filter(e => e.user !== me);
     const here = others.filter(e => e.viewing === documentId).map(e => e.user);
     const newest = [...thread].reverse().find(a => !a.mine);
-    const author = (a: typeof thread[number]) => a.anonymous && !a.mine ? "Someone" : displayName(a.op.user, v.names, me);
+    const author = (a: typeof thread[number]) => a.anonymous && !a.mine ? "Someone" : displayName(a.op.user, v, me);
 
     // the newest note in view when it opens, and as notes arrive
     useEffect(() => { if (open && list.current) list.current.scrollTop = list.current.scrollHeight; }, [open, thread.length]);
@@ -61,7 +61,7 @@ export function NotesDock({ documentId }: { documentId: string }) {
 
     const status = [
         others.length ? `${others.length} other${others.length === 1 ? "" : "s"} online` : "Nobody else online",
-        here.length ? `${listPeople(here, v.names)} ${here.length === 1 ? "is" : "are"} reading this` : "",
+        here.length ? `${listPeople(here, v)} ${here.length === 1 ? "is" : "are"} reading this` : "",
         `${thread.length} note${thread.length === 1 ? "" : "s"}`
     ].filter(Boolean).join(" · ");
 
@@ -81,7 +81,7 @@ export function NotesDock({ documentId }: { documentId: string }) {
             {open && (
                 <div class="notes-dock__sheet">
                     {others.length > 0 && (
-                        <p class="notes-dock__people">Online: {listPeople(others.map(e => e.user), v.names)}</p>
+                        <p class="notes-dock__people">Online: {listPeople(others.map(e => e.user), v)}</p>
                     )}
                     {thread.length ? (
                         <ol class="notes-dock__list" ref={list}>

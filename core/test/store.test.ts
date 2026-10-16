@@ -211,3 +211,30 @@ test("one cursor per node: moving between the library and a drop point re-reads 
     await s.sync(spy(lib));
     assert.deepEqual(asked, ["", "lib.1", "drop-1.0,lib.1"]);
 });
+
+test("an op committed while a sync starts is still sent (storage that takes its time)", async () => {
+    // IndexedDB saves in a later task, so a sync can start while a commit is saving the outbox
+    class SlowStorage extends MemoryStorage {
+        hold: Promise<void> | null = null;
+        override async setMeta(key: string, value: string) {
+            if (key === "outbox" && this.hold) await this.hold;
+            return super.setMeta(key, value);
+        }
+    }
+    const storage = new SlowStorage();
+    const store = new LibraryStore(storage, env("d-slow"));
+    await store.open();
+    const node = fakeNode();
+    let release!: () => void;
+    storage.hold = new Promise(r => { release = r; });
+    const committing = store.annotate("steward:1", "sent in the middle", "public");
+    await new Promise(r => setTimeout(r, 0));      // the commit is now waiting on the outbox
+    const syncing = store.sync(node);              // and a sync starts
+    release();
+    storage.hold = null;
+    await committing;
+    await syncing;
+    await store.sync(node);
+    assert.deepEqual(node.log.map(o => o.type === "annotation" && o.body), ["sent in the middle"]);
+    assert.deepEqual(store.outbox, []);
+});
