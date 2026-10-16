@@ -22,7 +22,8 @@ type DocumentProperties = {
     description?: string,
     alt?: string,   // describing an image counts as a contribution
     thumbnail?: string, // hash of a small image of it for the gallery: a PDF's first page, a book's cover
-    editors?: string    // who may change these details: "everyone" (the default), "owner", or "people:<user>,<user>"
+    editors?: string,   // who may change these details: "everyone" (the default), "owner", or "people:<user>,<user>"
+    prompts?: string    // notes the uploader pinned as prompts for everyone, in order: "<note id>,<note id>"
 };
 
 // `${user}:${counter}` — device id plus a counter that only goes up
@@ -83,7 +84,7 @@ type Hide = OpBase & {
 };
 
 // which of a document's properties a person can fill in or correct afterwards
-type DescribeField = "title" | "subtitle" | "author" | "type" | "year" | "description" | "alt" | "thumbnail" | "editors";
+type DescribeField = "title" | "subtitle" | "author" | "type" | "year" | "description" | "alt" | "thumbnail" | "editors" | "prompts";
 
 // metadata is contributed like anything else: one small op per field, latest wins
 type Describe = OpBase & {

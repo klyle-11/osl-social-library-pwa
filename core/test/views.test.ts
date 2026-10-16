@@ -169,3 +169,30 @@ test("a loop of replies doesn't hang or lose notes", () => {
         note("d-c:70", "d-c", "2026-10-05T10:05:00Z", "two", "d-b:70")]);
     assert.equal(v.threads["d-a:1"].filter(a => a.op.body === "one" || a.op.body === "two").length, 2);
 });
+
+// d-a uploaded d-a:1; notes on it: d-b's and d-c's (see the fixtures)
+const pin = (id: string, user: string, value: string, minute = 30): Op =>
+    ({ id, user, timestamp: `2026-10-04T17:${String(minute).padStart(2, "0")}:00Z`, type: "describe", target: "d-a:1", field: "prompts", value } as Op);
+
+test("the uploader's pinned notes become the document's prompts, in the order pinned", () => {
+    const notes = view(all).threads["d-a:1"].map(a => a.op.id);
+    const v = view([...all, pin("d-a:90", "d-a", `${notes[1]},${notes[0]},${notes[1]}`)]);
+    assert.deepEqual(v.prompts["d-a:1"].map(n => n.id), [notes[1], notes[0]]);
+    assert.equal(v.feed.some(e => e.kind === "describe" && e.op.field === "prompts"), false);   // a setting, not a contribution
+    assert.equal(v.credits["d-a:1"]?.prompts, undefined);
+});
+
+test("only the uploader or a steward can pin; anyone else's pins are ignored", () => {
+    const notes = view(all).threads["d-a:1"].map(a => a.op.id);
+    assert.equal(view([...all, pin("d-b:90", "d-b", notes[0])]).prompts["d-a:1"], undefined);
+    assert.deepEqual(view([...all, pin("s:90", "s", notes[0])], "d-a", ["s"]).prompts["d-a:1"].map(n => n.id), [notes[0]]);
+});
+
+test("a private or hidden note is never a prompt, and unpinning clears them", () => {
+    const secret: Op = { id: "d-a:91", user: "d-a", timestamp: "2026-10-04T17:00:00Z", type: "annotation", target: "d-a:1", body: "mine only", access: "private" };
+    const notes = view(all).threads["d-a:1"].map(a => a.op.id);
+    const hide: Op = { id: "d-a:92", user: "d-a", timestamp: "2026-10-04T17:10:00Z", type: "hide", target: notes[0] };
+    const v = view([...all, secret, hide, pin("d-a:93", "d-a", `d-a:91,${notes[0]},${notes[1]}`)]);
+    assert.deepEqual(v.prompts["d-a:1"].map(n => n.id), [notes[1]]);
+    assert.equal(view([...all, pin("d-a:93", "d-a", notes[1]), pin("d-a:94", "d-a", "", 40)]).prompts["d-a:1"], undefined);
+});

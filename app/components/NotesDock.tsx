@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Access } from "../../core/types";
-import { attempt, presence, useLibrary, views, viewer } from "../state";
+import { answering, attempt, presence, stewards, useLibrary, views, viewer } from "../state";
+import { PinButton } from "./AnnotationThread";
 import { displayName, listPeople, when } from "../format";
 
 const ACCESS: [Access, string][] = [["public", "Everyone, with my name"], ["anonymous", "Everyone, without my name"], ["private", "Only me"]];
@@ -29,10 +30,21 @@ export function NotesDock({ documentId }: { documentId: string }) {
         ro.observe(el);
         return () => { ro.disconnect(); root.removeProperty("--notes-dock"); };
     }, []);
+    // a tapped prompt: the next note answers it
+    const prompt = answering.value?.documentId === documentId ? answering.value : null;
+    useEffect(() => {
+        // only where the dock is the place to write (phones, the full-screen reader)
+        if (!prompt || !dock.current || getComputedStyle(dock.current).display === "none") return;
+        setReplyTo({ id: prompt.noteId, name: prompt.name });
+        answering.value = null;
+        input.current?.focus();
+    }, [prompt?.noteId]);
     // back to one line once a note is sent
     useEffect(() => { if (!body && input.current) input.current.style.height = ""; }, [body]);
 
     const thread = v.threads[documentId] ?? [];
+    const doc = v.documents[documentId];
+    const mayPin = !!doc && (doc.user === me || stewards.value.includes(me));
     const others = presence.value.online.filter(e => e.user !== me);
     const here = others.filter(e => e.viewing === documentId).map(e => e.user);
     const newest = [...thread].reverse().find(a => !a.mine);
@@ -85,6 +97,7 @@ export function NotesDock({ documentId }: { documentId: string }) {
                                         setReplyTo({ id: a.op.id, name: author(a) });
                                         input.current?.focus();
                                     }}>Reply</button>
+                                    {mayPin && a.op.access !== "private" && <PinButton documentId={documentId} noteId={a.op.id} small />}
                                 </li>
                             ))}
                         </ol>

@@ -57,6 +57,9 @@ export const sortBy = signal<SortKey>((() => {
     }
 })());
 
+// a prompt someone tapped: the note they write next answers it (PromptStrips → the composer)
+export const answering = signal<{ documentId: string, noteId: string, name: string } | null>(null);
+
 // one line of feedback for whatever just happened (or failed)
 export const notice = signal<{ text: string, error?: boolean } | null>(null);
 

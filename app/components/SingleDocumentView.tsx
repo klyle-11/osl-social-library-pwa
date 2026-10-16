@@ -8,6 +8,7 @@ import { AnnotationThread } from "./AnnotationThread";
 import { AnnotationForm } from "./AnnotationForm";
 import { DetailsForm } from "./DetailsForm";
 import { NotesDock } from "./NotesDock";
+import { PromptStrips } from "./PromptStrips";
 import { mayEdit } from "../../core/views";
 
 // The reader: the document itself on the left, and everything people have said
@@ -40,6 +41,7 @@ export function SingleDocumentView({ id }: { id: string }) {
             <div class="single-document__stage">
                 <a class="single-document__back" href={href({ view: "gallery" })}>← The library</a>
                 <DocumentViewer doc={doc} />
+                <PromptStrips documentId={id} />
             </div>
 
             <aside class="single-document__panel">

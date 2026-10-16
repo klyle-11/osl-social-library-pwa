@@ -38,6 +38,7 @@
     --tint-pdf: #fcecd1;
     --tint-text: #f6e8ff;
     --radius: 0;
+    --paper: #fbf5e3; --paper-ink: #282828;   /* the prompt strips */
     color-scheme: light;
 
     --tap: 2.75rem;
@@ -47,6 +48,7 @@
 }
 
 :root[data-theme="light"] {
+    --paper: #fffcf2; --paper-ink: #2a2824;
     --mark: #ffffff; --mark-ink: #3a4d53; --mark-hover: #d2212d; --mark-hover-ink: #ffffff;
     --bg: #fbf3db; --surface: #fbf3db; --raised: #ece3cc; --tint: #ece3cc;
     --line: #d5cdb6; --rule: #53676d; --control-line: #909995;
@@ -59,6 +61,7 @@
 }
 
 :root[data-theme="dark"] {
+    --paper: #ece3c9; --paper-ink: #2a2824;
     --mark: #184956; --mark-ink: #cad8d9; --mark-hover: #dbb32d; --mark-hover-ink: #103c48;
     --bg: #103c48; --surface: #103c48; --raised: #184956; --tint: #184956;
     --line: #2d5b69; --rule: #2d5b69; --control-line: #2d5b69;
@@ -71,6 +74,7 @@
 }
 
 :root[data-theme="black"] {
+    --paper: #e6ddc3; --paper-ink: #2a2824;
     --mark: #252525; --mark-ink: #dedede; --mark-hover: #dbb32d; --mark-hover-ink: #181818;
     --bg: #181818; --surface: #181818; --raised: #252525; --tint: #252525;
     --line: #3b3b3b; --rule: #3b3b3b; --control-line: #3b3b3b;
@@ -84,6 +88,7 @@
 
 /* the workshop's first colours: Maroon's Motherboard */
 :root[data-theme="maroon"] {
+    --paper: #f4e9cf; --paper-ink: #2a2824;
     --mark: #372c6b; --mark-ink: #fffffc; --mark-hover: #f4c877; --mark-hover-ink: #1d163e;
     --bg: #1d163e; --surface: #2a2154; --raised: #372c6b; --tint: #372c6b;
     --line: #51468a; --rule: #51468a; --control-line: #51468a;
@@ -749,3 +754,67 @@ label { display: block; }
 .audio-buttons--large button { min-height: var(--tap); padding: 0.5rem 1rem; font-size: 1rem; }
 .document-viewer--audio { display: grid; gap: 0.75rem; justify-items: start; padding: 2rem 1.25rem; }
 .document-viewer__audio-title { font-size: 1.25rem; font-weight: 700; }
+
+/* ---------- prompts: strips of paper coming off the right of the document ---------- */
+
+.single-document__stage, .present__stage { position: relative; }
+/* prompts sit low beside the reading, so a short document still gives them room */
+.single-document__stage:has(.prompt-strips) { min-height: min(70vh, 40rem); }
+.prompt-strips {
+    position: absolute; right: -0.75rem; bottom: 1rem; z-index: 4;
+    display: grid; justify-items: end; gap: 0.35rem; width: min(17rem, 62%);
+    pointer-events: none;   /* the reading underneath stays reachable between strips */
+}
+.prompt-strips > * { pointer-events: auto; }
+.prompt-strips__tab {
+    min-height: 2rem; padding: 0.1rem 0.6rem; font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    background: var(--bg); border: 1px solid var(--rule); border-right: 0; border-radius: 0;
+}
+.prompt-strips__list { display: grid; gap: 0.45rem; width: 100%; margin: 0; padding: 0; list-style: none; }
+.prompt-strips__item { transform: rotate(var(--tilt, 0deg)); transform-origin: right center; }
+.prompt-strips__strip {
+    display: grid; gap: 0.15rem; width: 100%; min-height: 0; margin: 0;
+    padding: 0.55rem 0.9rem 0.55rem 1.1rem; text-align: left;
+    background: var(--paper); color: var(--paper-ink); border: 0; border-radius: 0;
+    font-family: var(--serif); font-size: 0.9375rem; line-height: 1.35;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 10px rgb(0 0 0 / 0.1);
+    /* a torn left edge; the right edge runs off the page */
+    clip-path: polygon(0.45rem 0, 100% 0, 100% 100%, 0.45rem 100%, 0.2rem 88%, 0.5rem 76%, 0.15rem 63%, 0.45rem 50%, 0.2rem 37%, 0.5rem 24%, 0.15rem 12%);
+}
+button.prompt-strips__strip { cursor: pointer; }
+button.prompt-strips__strip:hover:not(:disabled) { background: var(--paper); color: var(--paper-ink); border-color: transparent; filter: brightness(0.97); }
+.prompt-strips__text { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompt-strips__by { font-family: var(--sans); font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
+@media (prefers-reduced-motion: no-preference) {
+    .prompt-strips__item { animation: strip-in 0.35s ease-out backwards; }
+    .prompt-strips__item:nth-child(2) { animation-delay: 0.06s; }
+    .prompt-strips__item:nth-child(3) { animation-delay: 0.12s; }
+    .prompt-strips__item:nth-child(n+4) { animation-delay: 0.18s; }
+    @keyframes strip-in { from { transform: translateX(110%) rotate(var(--tilt, 0deg)); } }
+}
+
+/* on a phone, and in the full-screen reader: just above the notes (and the player) */
+@media (max-width: 59.99rem) {
+    .single-document .prompt-strips {
+        position: fixed; right: 0; bottom: calc(var(--notes-dock, 0px) + var(--audio-bar, 0px) + 0.5rem);
+        width: min(16rem, 78vw); z-index: 54;
+    }
+}
+.reader-open .single-document .prompt-strips {
+    position: fixed; right: 0; bottom: calc(1.75rem + var(--notes-dock, 0px) + var(--audio-bar, 0px)); z-index: 54;
+}
+
+/* the big screen: larger, read from across the room */
+.prompt-strips--screen { right: 1rem; bottom: 1.5rem; width: min(26rem, 40%); }   /* the stage scrolls, and would clip them */
+.prompt-strips--screen .prompt-strips__strip { font-size: clamp(1.05rem, 1.5vw, 1.5rem); padding: 0.8rem 1.25rem 0.8rem 1.4rem; }
+.prompt-strips--screen .prompt-strips__text { -webkit-line-clamp: 5; }
+
+/* pinning, in the thread and the dock */
+.pin-button { min-height: 2rem; padding: 0.1rem 0.6rem; font-size: 0.8125rem; }
+.pin-button--on { border-style: dashed; }
+.pin-button--small { margin-left: 0.25rem; }
+.annotation-thread__item--prompt { background: linear-gradient(to right, var(--paper), transparent 70%); }
+.annotation-thread__prompt { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.annotation-form__answering { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.8125rem; color: var(--accent); font-weight: 700; }
+.annotation-form__unanswer { min-height: 2rem; min-width: 2rem; padding: 0; }

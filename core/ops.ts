@@ -10,7 +10,7 @@ export const OP_TYPES: readonly OpType[] = [
 ];
 
 export const DESCRIBE_FIELDS: readonly DescribeField[] = [
-    "title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors"
+    "title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors", "prompts"
 ];
 
 export const ACCESS: readonly Access[] = ["public", "private", "anonymous"];
@@ -121,6 +121,7 @@ function checkFields(o: Fields): string | null {
                 ?? str(pf, "alt", LIMITS.text, false)
                 ?? str(pf, "thumbnail", 200, false)
                 ?? str(pf, "editors", LIMITS.text, false)
+                ?? str(pf, "prompts", LIMITS.text, false)
                 ?? (typeof pf.type === "string" ? null : "properties.type must be a string");
         }
         case "annotation":
@@ -142,7 +143,7 @@ function checkFields(o: Fields): string | null {
             if (typeof o.value !== "string") return "value must be a string";
             // a title can be corrected but not emptied; any other field can be cleared
             if (o.field === "title" && o.value.trim() === "") return "title is empty";
-            const max = o.field === "description" || o.field === "alt" || o.field === "editors" ? LIMITS.text : o.field === "year" ? 20 : LIMITS.title;
+            const max = o.field === "description" || o.field === "alt" || o.field === "editors" || o.field === "prompts" ? LIMITS.text : o.field === "year" ? 20 : LIMITS.title;
             return o.value.length > max ? `value is longer than ${max}` : null;
         }
     }

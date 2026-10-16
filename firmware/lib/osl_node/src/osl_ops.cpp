@@ -10,7 +10,7 @@ static const size_t BODY = 1000, NAME = 80, TITLE = 200, TEXT = 1000, URL = 2000
 
 static const char* const TYPES[] = {"document", "annotation", "add-to-collection", "remove-from-collection",
                                     "name-collection", "name-user", "hide", "describe"};
-static const char* const DESCRIBE_FIELDS[] = {"title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors"};
+static const char* const DESCRIBE_FIELDS[] = {"title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors", "prompts"};
 
 static bool oneOf(const char* s, const char* const* list, size_t n) {
     if (!s) return false;
@@ -143,6 +143,7 @@ const char* validateOp(JsonObjectConst o) {
         TRY(OPT(p, "alt", TEXT));
         TRY(OPT(p, "thumbnail", 200));
         TRY(OPT(p, "editors", TEXT));
+        TRY(OPT(p, "prompts", TEXT));
         if (!p["type"].is<const char*>()) return "properties.type must be a string";
         return nullptr;
     }
@@ -172,7 +173,7 @@ const char* validateOp(JsonObjectConst o) {
     if (!o["value"].is<const char*>()) return "value must be a string";
     const char* value = o["value"];
     if (!strcmp(field, "title") && blank(value)) return "title is empty";
-    size_t max = !strcmp(field, "description") || !strcmp(field, "alt") || !strcmp(field, "editors") ? TEXT : !strcmp(field, "year") ? 20 : TITLE;
+    size_t max = !strcmp(field, "description") || !strcmp(field, "alt") || !strcmp(field, "editors") || !strcmp(field, "prompts") ? TEXT : !strcmp(field, "year") ? 20 : TITLE;
     return utf16Length(value) > max ? "value is too long" : nullptr;
 }
 

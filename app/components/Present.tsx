@@ -4,6 +4,7 @@ import { attempt, presence, tokens, useTransport, views, viewer } from "../state
 import { displayName, listPeople, mediumLabel, when } from "../format";
 import { href } from "../route";
 import { DocumentViewer } from "./DocumentViewer";
+import { PromptStrips } from "./PromptStrips";
 import { QrCode } from "./QrCode";
 
 // The big screen: what the room is looking at, how to join, who is here, and
@@ -58,7 +59,7 @@ export function Present() {
 
             <main class="present__stage">
                 {doc
-                    ? <DocumentViewer doc={doc} />
+                    ? <><DocumentViewer doc={doc} /><PromptStrips documentId={doc.id} place="screen" /></>
                     : (
                         <div class="present__idle">
                             <p class="present__idle-title">Nothing is on the screen yet.</p>

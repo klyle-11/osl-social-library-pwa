@@ -49,7 +49,9 @@ export type LibraryViews = {
     collectionsByDocument: Record<OpId, CollectionId[]>,
     threads: Record<OpId, AnnotationView[]>,        // oldest first, like a conversation; each reply right under what it answers
     names: Record<string, string>,
-    people: string[]
+    people: string[],
+    // notes the uploader pinned as prompts, in their order: only ones everyone can see
+    prompts: Record<OpId, Annotation[]>
 };
 
 export const KEPT_NAME = "Kept";
@@ -89,7 +91,9 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
         const doc = documents[op.target];
         if (!doc) continue;
         const owner = op.user === doc.user || stewards.has(op.user);
-        if (op.field === "editors" ? !owner || parseEditors(op.value) === null : !mayEdit(doc, op.user, stewards)) {
+        // who may edit, and which notes are pinned as prompts, are the uploader's (or a steward's) to set
+        const ownerOnly = op.field === "editors" || op.field === "prompts";
+        if (ownerOnly ? !owner || (op.field === "editors" && parseEditors(op.value) === null) : !mayEdit(doc, op.user, stewards)) {
             // a document nobody has pictured yet takes its first thumbnail from whoever opens it
             if (!(op.field === "thumbnail" && !doc.properties.thumbnail && !owner && op.value)) continue;
         }
@@ -100,7 +104,7 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
         else properties[op.field] = op.value;
         documents[op.target] = { ...doc, properties };
         // a thumbnail is made by the app and who-may-edit is a setting: no credit, nothing in the feed
-        if (op.field === "thumbnail" || op.field === "editors") continue;
+        if (op.field === "thumbnail" || op.field === "editors" || op.field === "prompts") continue;
         (credits[op.target] ??= {})[op.field] = { user: op.user, timestamp: op.timestamp };
         describesInFeed.push(op);
     }
@@ -184,6 +188,16 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
         threads[doc] = out;
     }
 
+    // 5b. prompts: the pinned notes, in the order pinned. A pinned note that is hidden,
+    //     private or on another document isn't shown, and so can't put words in anyone's mouth.
+    const prompts: Record<OpId, Annotation[]> = {};
+    for (const [id, doc] of Object.entries(documents)) {
+        if (!doc.properties.prompts) continue;
+        const here = new Map((visible[id] ?? []).filter(n => n.access !== "private").map(n => [n.id, n]));
+        const pinned = parsePrompts(doc.properties.prompts).map(p => here.get(p)).filter((n): n is Annotation => !!n);
+        if (pinned.length) prompts[id] = pinned;
+    }
+
     // 6. the feed: what happened, newest first. Chronological, no ranking.
     const feed: FeedEntry[] = [];
     for (const id of Object.keys(documents)) feed.push({ kind: "document", op: documents[id] });
@@ -193,7 +207,12 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
     for (const op of firstNaming.values()) feed.push({ kind: "collection", op });
     feed.sort((a, b) => compareOps(b.op, a.op));
 
-    return { documents, documentOrder, credits, feed, collections, collectionOrder, collectionsByDocument, threads, names, people };
+    return { documents, documentOrder, credits, feed, collections, collectionOrder, collectionsByDocument, threads, names, people, prompts };
+}
+
+// "<note id>,<note id>": the pinned notes, first pinned first; no repeats
+export function parsePrompts(value: string | undefined): OpId[] {
+    return [...new Set((value ?? "").split(",").map(s => s.trim()).filter(Boolean))];
 }
 
 export type Editors = { kind: "everyone" } | { kind: "owner" } | { kind: "people", users: string[] };

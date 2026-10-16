@@ -171,6 +171,11 @@ export class LibraryStore {
             createDescribe({ ...ctx, seq: ctx.seq + i }, documentId, field, value)), fields.length);
     }
 
+    // the uploader's prompts: the notes pinned on a document, in order (empty: none)
+    setPrompts(documentId: OpId, noteIds: OpId[]): Promise<OpId> {
+        return this.describe(documentId, { prompts: [...new Set(noteIds)].join(",") });
+    }
+
     // media this person adds: kept locally, and queued for the node
     async putMedia(hash: string, data: string): Promise<void> {
         await this.storage.putMedia(hash, data);
