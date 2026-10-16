@@ -53,7 +53,10 @@ export class Libraries {
     private open(id: string) {
         const dir = this.dir(id);
         mkdirSync(dir, { recursive: true });
-        this.logs.set(id, new LibraryLog({ log: join(dir, "ops.jsonl"), logId: join(dir, "log-id"), conflicts: join(dir, "conflicts.jsonl") }));
+        this.logs.set(id, new LibraryLog({
+            log: join(dir, "ops.jsonl"), logId: join(dir, "log-id"), conflicts: join(dir, "conflicts.jsonl"),
+            origins: join(dir, "origins.jsonl"), takenDown: join(dir, "taken-down.json")
+        }));
     }
 
     // the reason it can't be made, or the library

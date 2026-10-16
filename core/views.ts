@@ -1,4 +1,4 @@
-import { collectionOwner, keptCollectionId } from "./ops";
+import { collectionOwner, keptCollectionId, tombstone } from "./ops";
 import { compareOps } from "./merge";
 import { NO_IDENTITY, defaultAccess, inAudience, isKept, parseAudience, personOf, type Audience } from "./access";
 import type {
@@ -35,7 +35,8 @@ export type AnnotationView = {
     anonymous: boolean,
     mine: boolean,
     depth: number,              // 0 for a note on the document, 1 for a reply to it, …
-    parent: Annotation | null   // the note it answers, when that note is visible here
+    parent: Annotation | null,  // the note it answers, when that note is visible here
+    struck: boolean             // taken back: still here, with who wrote it, its words ***
 };
 
 // who last filled in a field, so the screen can credit them
@@ -62,27 +63,35 @@ export type LibraryViews = {
     devices: Record<string, string>,                // device -> account, from the node's directory
     accounts: Record<string, string>,               // account -> name, from the node's directory
     // notes the uploader pinned as prompts, in their order: only ones everyone can see
-    prompts: Record<OpId, Annotation[]>
+    prompts: Record<OpId, Annotation[]>,
+    // what has been taken back here, and how: the device erases these from its own copy
+    redactions: Record<OpId, "strike" | "remove">
 };
 
 export const KEPT_NAME = "Kept";
 
 export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
-    const log = [...ops].sort(compareOps);
-    const byId = new Map(log.map(op => [op.id, op]));
+    const sorted = [...ops].sort(compareOps);
+    const original = new Map(sorted.map(op => [op.id, op]));
     const identity = options.identity ?? NO_IDENTITY;
     const person = (user: string) => personOf(identity, user);
     const stewards = new Set(options.stewards);
     const isSteward = (user: string) => stewards.has(user) || stewards.has(person(user));
     const me = person(options.viewer);
 
-    // 1. hides: allowed for the target's own author, or a steward
+    // 1. hides and redacts: allowed for the target's own author, or a steward. A removed
+    //    op is hidden; a struck one stays, with its words taken out (tombstone). Remove
+    //    outweighs strike, whichever came first.
     const hidden = new Set<OpId>();
-    for (const op of log) {
-        if (op.type !== "hide") continue;
-        const target = byId.get(op.target);
-        if (target && (person(target.user) === person(op.user) || isSteward(op.user))) hidden.add(op.target);
+    const redactions: Record<OpId, "strike" | "remove"> = {};
+    for (const op of sorted) {
+        if (op.type !== "hide" && op.type !== "redact") continue;
+        const target = original.get(op.target);
+        if (!target || target.type === "redact" || !(person(target.user) === person(op.user) || isSteward(op.user))) continue;
+        if (op.type === "hide" || op.mode === "remove") { hidden.add(op.target); if (op.type === "redact") redactions[op.target] = "remove"; }
+        else if (redactions[op.target] !== "remove") redactions[op.target] = "strike";
     }
+    const log = sorted.map(op => (redactions[op.id] ? tombstone(op) : op));
 
     // 2. names: last writer wins, per user (a user can only name themselves)
     const names: Record<string, string> = {};
@@ -234,7 +243,7 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
         const walk = (n: Annotation, depth: number, parent: Annotation | null) => {
             if (placed.has(n.id)) return;   // a loop of replies can't hang the page
             placed.add(n.id);
-            out.push({ op: n, anonymous: n.access === "anonymous", mine: person(n.user) === me, depth, parent });
+            out.push({ op: n, anonymous: n.access === "anonymous", mine: person(n.user) === me, depth, parent, struck: redactions[n.id] === "strike" });
             for (const c of children.get(n.id) ?? []) walk(c, depth + 1, n);
         };
         for (const r of roots) walk(r, 0, null);
@@ -247,7 +256,7 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
     const prompts: Record<OpId, Annotation[]> = {};
     for (const [id, doc] of Object.entries(documents)) {
         if (!doc.properties.prompts) continue;
-        const here = new Map((visible[id] ?? []).filter(n => n.access !== "private").map(n => [n.id, n]));
+        const here = new Map((visible[id] ?? []).filter(n => n.access !== "private" && !redactions[n.id]).map(n => [n.id, n]));
         const pinned = parsePrompts(doc.properties.prompts).map(p => here.get(p)).filter((n): n is Annotation => !!n);
         if (pinned.length) prompts[id] = pinned;
     }
@@ -263,7 +272,7 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
 
     return {
         documents, documentOrder, credits, feed, collections, collectionOrder, collectionsByDocument, threads,
-        names, people, devices: identity.devices, accounts: options.accounts ?? {}, prompts
+        names, people, devices: identity.devices, accounts: options.accounts ?? {}, prompts, redactions
     };
 }
 

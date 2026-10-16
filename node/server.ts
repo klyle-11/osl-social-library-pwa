@@ -20,6 +20,7 @@ import { Accounts, MIN_PASSWORD, Sessions } from "./accounts";
 import { Libraries, MAIN } from "./libraries";
 import { verifyPassword } from "./passwords";
 import { startWatching } from "./watch";
+import { Moderation, Takedowns, type Banned } from "./moderation";
 import {
     NOT_PAIRED, cleanRoles, cleanUploaders, mayAdminister, mayOpen, mayPresent, mayUpload, rolesOf, stewardsOf,
     type Account, type LibraryConfig, type Paired, type Session
@@ -65,10 +66,38 @@ function identityOf(lib: LibraryConfig): Identity {
     return { devices: accounts.devices(), groups: Object.fromEntries(lib.groups.map(g => [g.id, g.members])) };
 }
 
-// may a document op from this device be taken? Over the radio there is no session: only accounts count.
+// bans, the admin's contact details, and takedown requests (node/moderation.ts)
+const moderation = new Moderation(join(DATA, "moderation.json"));
+const takedowns = new Takedowns(join(DATA, "takedowns.jsonl"));
+
+// What a library takes from anyone, by http or by radio: nothing from a banned device; a
+// document only from someone who may add documents, and not a file that was taken down.
+// Over the radio there is no session: only accounts count.
 function documentRule(lib: LibraryConfig, paired: Paired) {
-    return (op: Op) => op.type === "document" && !mayUpload(lib, accounts.get(accounts.ownerOf(op.user)), paired)
-        ? "Adding documents to this library isn't open to everyone." : null;
+    const log = libraries.log(lib.id);
+    return (op: Op) => {
+        if (moderation.match(lib.id, { devices: [op.user] })) return "This device can't add to this library.";
+        if (op.type !== "document") return null;
+        if (!mayUpload(lib, accounts.get(accounts.ownerOf(op.user)), paired)) return "Adding documents to this library isn't open to everyone.";
+        if (op.hash && log.takenDown.has(op.hash)) return "That file was taken down here.";
+        return null;
+    };
+}
+
+// over the radio, nothing can be taken back: who sent it can't be checked there
+function radioRule(lib: LibraryConfig) {
+    const rule = documentRule(lib, NOT_PAIRED);
+    return (op: Op) => op.type === "redact" ? "Take things back at the library itself." : rule(op);
+}
+
+// Files no library points at any more are deleted from the node.
+function freeMedia(hashes: string[]) {
+    for (const h of hashes) {
+        if (!HASH.test(h) || libraries.list().some(l => libraries.log(l.id).hashes.has(h))) continue;
+        rmSync(join(MEDIA, h), { force: true });
+        rmSync(join(MEDIA, h + ".type"), { force: true });
+        console.log(`removed the file ${h.slice(0, 15)}…`);
+    }
 }
 
 // ---- the radio (gate seven): RADIO_PORT is the LoRa modem's serial device, e.g. /dev/ttyACM0 ----
@@ -88,7 +117,7 @@ function carried(): RadioLibrary[] {
         const log = libraries.log(lib.id);
         return {
             id: lib.id, name: lib.name, hash: lib.password, log: log.log, logId: log.logId,
-            accept: (ops: unknown[]) => log.accept(ops, documentRule(lib, NOT_PAIRED)),
+            accept: (ops: unknown[]) => { const r = log.accept(ops, radioRule(lib), "radio"); freeMedia(log.takeFreed()); return r; },
             skip: log.notFor(null, identityOf(lib))
         };
     });
@@ -354,7 +383,8 @@ function directory(lib: LibraryConfig, w: Who) {
         libraries: libraries.list().map(l => ({ id: l.id, name: l.name, protected: !!l.password, open: mayOpen(l, w.account, w.session) })),
         me: w.account && { id: w.account.id, username: w.account.username, name: w.account.name, admin: w.account.admin },
         signup: accounts.signup,
-        setup: accounts.count === 0          // no accounts yet: the first needs the pairing code
+        setup: accounts.count === 0,         // no accounts yet: the first needs the pairing code
+        contact: moderation.contact          // how to reach whoever looks after the node (takedowns, bans)
     };
     if (!mayOpen(lib, w.account, w.session)) return { ...base, library: { id: lib.id, name: lib.name, protected: true, locked: true } };
     const log = libraries.log(lib.id);
@@ -384,13 +414,51 @@ function directory(lib: LibraryConfig, w: Who) {
 
 // May this device's op be taken from this browser? A signed-in device's ops wait on the
 // phone until its account is signed in again. Then the library's rule for documents.
-function authorRule(lib: LibraryConfig, w: Who) {
+function authorRule(lib: LibraryConfig, w: Who, ip: string) {
     const documents = documentRule(lib, w.paired);
+    const log = libraries.log(lib.id);
     return (op: Op) => {
         const owner = accounts.ownerOf(op.user);
         if (owner && owner !== w.account?.id) return { keep: "signed out" };
+        if (op.type === "redact") return mayTakeBack(lib, log, op, ip);
         return documents(op);
     };
+}
+
+// Its author may take something back, and a steward may take back anything. An account is
+// who it says (its session was checked); a guest has to be on the device and the network
+// address it wrote from.
+function mayTakeBack(lib: LibraryConfig, log: ReturnType<typeof libraries.log>, op: Op & { type: "redact" }, ip: string): string | null {
+    const target = log.get(op.target);
+    if (!target) return "There's nothing here to take back.";
+    if (target.type === "redact") return "That can't be taken back.";
+    const by = accounts.ownerOf(op.user);
+    if (rolesOf(lib, accounts.get(by)).has("steward")) return null;
+    if ((by ?? op.user) !== (accounts.ownerOf(target.user) ?? target.user)) return "Only whoever wrote it, or a steward, can take that back.";
+    if (by) return null;
+    if (op.user === target.user && log.origins.get(target.id) === ip) return null;
+    return "Take this back from the device and Wi-Fi you wrote it on, or ask a steward.";
+}
+
+// A ban, as the banned browser is told it. The library's admins are never banned there.
+function bannedIn(lib: LibraryConfig, w: Who, ip: string, devices: string[]): Banned | null {
+    if (mayAdminister(lib, w.account)) return null;
+    return moderation.match(lib.id, { ip, devices, account: w.account?.id ?? null });
+}
+
+function banned(res: ServerResponse, b: Banned) {
+    return json(res, 403, { error: b.message || "You can't use this library.", banned: b });
+}
+
+// a person's name as moderators see it: an account's, or a guest's own with "(Guest)"
+function nameOf(lib: LibraryConfig, user: string): { name: string, account: string | null } {
+    const account = accounts.get(accounts.ownerOf(user));
+    if (account) return { name: account.name, account: account.id };
+    if (user === "steward" || user === "folder") return { name: "The library", account: null };
+    const log = libraries.log(lib.id);
+    let name = "";
+    for (const o of log.log) if (o.type === "name-user" && o.user === user) name = o.name;
+    return { name: name ? `${name} (Guest)` : `Guest ${user.replace(/^d-/, "").slice(0, 4)}`, account: null };
 }
 
 const str = (v: unknown, max = 200) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -406,7 +474,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         url.searchParams.set("library", scoped[1]);
         path = "/api" + scoped[2];
     }
-    const ip = req.socket.remoteAddress ?? "?";
+    // an IPv4 address as people write it, not as an IPv6 socket reports it ("::ffff:192.168.1.5")
+    const ip = (req.socket.remoteAddress ?? "?").replace(/^::ffff:/, "");
 
     if (DEV && path === "/api/dev/reload") {
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
@@ -590,7 +659,29 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const lib = libraryFor(url);
         const w = whoIs(req);
         if (!lib) return json(res, 404, { error: "There's no library with that name here.", ...directory(libraries.get(MAIN)!, w) });
-        return json(res, 200, directory(lib, w));
+        const b = bannedIn(lib, w, ip, [str(url.searchParams.get("device"), 64)].filter(Boolean));
+        return json(res, 200, { ...directory(lib, w), ...(b && { banned: b }) });
+    }
+
+    // what someone wants taken down, for the admins (the Takedown page)
+    if (path === "/api/takedown" && req.method === "POST") {
+        const body = await readBody(req);
+        if (struckOut("takedown:" + ip)) return json(res, 429, { error: "Too many requests from here. Wait a minute and try again." });
+        strike("takedown:" + ip);
+        const lib = libraryFor(url) ?? libraries.get(MAIN)!;
+        const kinds = ["copyright", "privacy", "harm", "other"] as const;
+        const kind = kinds.find(k => k === body.kind) ?? "other";
+        const t = {
+            library: lib.id, name: str(body.name, 200).trim(), contact: str(body.contact, 300).trim(),
+            work: str(body.work, 3000).trim(), where: str(body.where, 3000).trim(), kind,
+            statement: body.statement === true, signature: str(body.signature, 200).trim(), from: ip
+        };
+        if (!t.name || !t.contact || !t.where) return json(res, 400, { error: "Say who you are, how to reach you, and where the material is." });
+        if (kind === "copyright" && (!t.statement || !t.signature || !t.work)) return json(res, 400, { error: "A copyright notice needs the work, the statements and your signature." });
+        const made = takedowns.add(t);
+        if (typeof made === "string") return json(res, 507, { error: made });
+        console.log(`takedown request (${kind}) for ${lib.id}: ${t.where.slice(0, 60).replace(/\s+/g, " ")}`);
+        return json(res, 200, { ok: true, id: made.id });
     }
 
     // a library's password, for this browser
@@ -699,6 +790,73 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // what a joining phone needs to be told, for a library this browser may open
     const w = whoIs(req);
     const open = mayOpen(lib, w.account, w.session);
+
+    // a banned browser, device or account gets nothing of the library, and can add nothing
+    if (/^\/api\/(ops|upload|media|showing|export)$/.test(path)) {
+        const b = bannedIn(lib, w, ip, [str(url.searchParams.get("user"), 64)].filter(Boolean));
+        if (b) { if (path === "/api/upload") req.resume(); return banned(res, b); }
+    }
+
+    // ---- moderation: the library's stewards take things back, its admins ban ----
+    if (path.startsWith("/api/moderation/")) {
+        const roles = rolesOf(lib, w.account);
+        if (!roles.has("steward")) return json(res, 403, { error: "This is for the library's stewards and admins." });
+        if (path === "/api/moderation/activity" && req.method === "GET") {
+            // everything that reached the library, newest first, a page at a time
+            const before = Math.min(Number(url.searchParams.get("before")) || log.log.length, log.log.length);
+            const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 100, 1), 500);
+            const entries = [];
+            for (let i = before - 1; i >= 0 && entries.length < limit; i--) {
+                const op = log.log[i];
+                const about = "target" in op ? log.get(op.target) : "documentId" in op ? log.get(op.documentId) : undefined;
+                entries.push({
+                    at: i, op, from: log.origins.get(op.id) ?? null, ...nameOf(lib, op.user),
+                    redacted: log.redacted.get(op.id) ?? null,
+                    about: about && about.type === "document" ? about.properties.title : about && about.type === "annotation" ? about.body.slice(0, 120) : null
+                });
+            }
+            return json(res, 200, { entries, total: log.log.length, next: entries.length ? entries[entries.length - 1].at : 0 });
+        }
+        if (!roles.has("admin")) return json(res, 403, { error: "Bans are for the library's admins." });
+        if (path === "/api/moderation/bans" && req.method === "GET") {
+            return json(res, 200, { bans: moderation.bans(w.account?.admin && url.searchParams.get("all") ? null : lib.id), contact: moderation.contact });
+        }
+        if (path === "/api/moderation/ban" && req.method === "POST") {
+            const body = await readBody(req);
+            const device = str(body.device, 64).trim(), banIp = str(body.ip, 64).trim(), account = str(body.account, 64).trim();
+            const everywhere = body.everywhere === true;
+            if (everywhere && !w.account?.admin) return json(res, 403, { error: "Only the node admin can ban from every library." });
+            // nobody bans themselves, or whoever looks after the node
+            const target = accounts.get(account || accounts.ownerOf(device));
+            if (target && (target.admin || target.id === w.account?.id || mayAdminister(lib, target))) return json(res, 400, { error: "Admins can't be banned here." });
+            if (banIp && banIp === ip) return json(res, 400, { error: "That's the address you're on now." });
+            const made = moderation.ban({
+                library: everywhere ? "*" : lib.id, ...(device && { device }), ...(banIp && { ip: banIp }), ...(account && { account }),
+                message: str(body.message, 1000), contact: body.contact === true, by: w.account!.id
+            });
+            if (typeof made === "string") return json(res, 400, { error: made });
+            if (account) sessions.signOutEverywhere(account);
+            console.log(`ban in ${made.library}: ${[device, banIp, account].filter(Boolean).join(", ")}`);
+            return json(res, 200, { ban: made });
+        }
+        if (path === "/api/moderation/unban" && req.method === "POST") {
+            const body = await readBody(req);
+            const ban = moderation.bans(null).find(b => b.id === str(body.id, 64));
+            if (!ban || (ban.library === "*" && !w.account?.admin) || (ban.library !== "*" && ban.library !== lib.id)) return json(res, 404, { error: "No such ban here." });
+            moderation.unban(ban.id);
+            return json(res, 200, { ok: true });
+        }
+        if (path === "/api/moderation/contact" && req.method === "POST") {
+            if (!w.account?.admin) return json(res, 403, { error: "Only the node admin can change the contact details." });
+            const body = await readBody(req);
+            moderation.setContact(str(body.contact, 1000));
+            return json(res, 200, { contact: moderation.contact });
+        }
+        if (path === "/api/moderation/takedowns" && req.method === "GET") {
+            return json(res, 200, { takedowns: takedowns.list(w.account?.admin && url.searchParams.get("all") ? null : lib.id) });
+        }
+        return json(res, 404, { error: "not found" });
+    }
 
     // the whole library as one zip, for anyone who may open it (You → Export the library)
     if (path === "/api/export") {
@@ -819,6 +977,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const type = MIME.test(sent) ? sent : "application/octet-stream";
         if (Number(req.headers["content-length"] ?? 0) > MAX_UPLOAD) { req.resume(); return json(res, 413, { error: tooLarge(MAX_UPLOAD) }); }
         const saved = await receiveUpload(req, type, MAX_UPLOAD, LOOKS[type]);
+        if (log.takenDown.has(saved.hash)) { freeMedia([saved.hash]); return json(res, 451, { error: "That file was taken down here." }); }
         log.hashes.add(saved.hash);    // so whoever may open this library may fetch it, before the op arrives
         console.log(`${w.paired.station ? "station" : "a device"} uploaded ${saved.hash.slice(0, 15)}… to ${lib.id} (${saved.size} bytes, ${type})`);
         return json(res, 200, { ...saved, fileType: type });
@@ -828,7 +987,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         if (!open) return locked(res, lib);
         const body = await readBody(req) as { ops?: unknown };
         if (!Array.isArray(body.ops)) return json(res, 400, { error: "expected { ops: [...] }" });
-        const result = log.accept(body.ops, authorRule(lib, w));
+        const devices = [...new Set(body.ops.map(o => (o as { user?: unknown } | null)?.user).filter((u): u is string => typeof u === "string"))];
+        const b = bannedIn(lib, w, ip, devices);
+        if (b) return banned(res, b);
+        const result = log.accept(body.ops, authorRule(lib, w, ip), ip);
+        freeMedia(log.takeFreed());
         if (result.added) console.log(`+${result.added} ops in ${lib.id} (total ${log.log.length})`);
         return json(res, 200, result);
     }
@@ -842,6 +1005,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         }
         const m = DATA_URL.exec(body.data);
         if (!m) return json(res, 400, { error: "data must be a base64 data URL" });
+        if (log.takenDown.has(body.hash)) return json(res, 451, { error: "That file was taken down here." });
         writeFileSync(join(MEDIA, body.hash), Buffer.from(m[2], "base64"));
         writeFileSync(join(MEDIA, body.hash + ".type"), m[1]);
         log.hashes.add(body.hash);

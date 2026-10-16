@@ -90,6 +90,15 @@ type Hide = OpBase & {
     target: OpId
 };
 
+// Taking something back, by its author or a steward. "strike": it stays where it was, with
+// who wrote it, and its words become ***. "remove": it's gone. Either way its words (and an
+// upload's file) are erased at the library, and on every device that gets this.
+type Redact = OpBase & {
+    type: "redact",
+    target: OpId,
+    mode: "strike" | "remove"
+};
+
 // Who may see a collection and who may add to it, set by its owner; latest wins.
 // Each is "everyone", "owner", or "people:<id>,<id>" (accounts "a-…" and groups "g-…").
 type CollectionAccess = OpBase & {
@@ -119,7 +128,8 @@ type Op =
     | NameUser
     | Hide
     | Describe
-    | CollectionAccess;
+    | CollectionAccess
+    | Redact;
 
 type OpType = Op["type"];
 
@@ -161,6 +171,6 @@ type Presence = {
 export type {
     Access, DocumentMedium, User, Identity, DocumentProperties, OpId, CollectionId,
     OpBase, LibraryDocument, Annotation, AddToCollection, RemoveFromCollection,
-    NameCollection, NameUser, Hide, DescribeField, Describe, CollectionAccess, Op, OpType, Conflict, OpContext,
+    NameCollection, NameUser, Hide, DescribeField, Describe, CollectionAccess, Redact, Op, OpType, Conflict, OpContext,
     PresenceEntry, Showing, Presence
 };

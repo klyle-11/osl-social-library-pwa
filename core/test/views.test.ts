@@ -307,3 +307,50 @@ test("without an account a guest is their own person, as before", () => {
     assert.equal(v.collections["d-b/kept"].mine, true);
     assert.deepEqual(v.collections["d-b/kept"].documentIds, ["d-a:1", "s:1"]);
 });
+
+// ---- taking things back: strike out, or remove ----
+
+const redact = (id: string, user: string, target: string, mode: "strike" | "remove", minute: number) =>
+    op({ id, user, timestamp: at(minute), type: "redact", target, mode });
+
+test("struck: the note stays with who wrote it, its words are ***", () => {
+    const notes = view(all).threads["d-a:1"];
+    const target = notes[0].op;
+    const v = view([...all, redact("s:80", "s", target.id, "strike", 1)], "d-a", ["s"]);
+    const t = v.threads["d-a:1"].find(n => n.op.id === target.id)!;
+    assert.equal(t.struck, true);
+    assert.equal(t.op.body, "***");
+    assert.equal(t.op.user, target.user);
+    assert.equal(v.redactions[target.id], "strike");
+    assert.ok(v.feed.some(e => e.op.id === target.id && e.kind === "annotation" && e.op.body === "***"));
+});
+
+test("removed: gone from the thread and the feed; remove outweighs strike", () => {
+    const target = view(all).threads["d-a:1"][0].op;
+    const v = view([...all, redact("s:80", "s", target.id, "remove", 1), redact("s:81", "s", target.id, "strike", 2)], "d-a", ["s"]);
+    assert.equal(v.threads["d-a:1"].some(n => n.op.id === target.id), false);
+    assert.equal(v.feed.some(e => e.op.id === target.id), false);
+    assert.equal(v.redactions[target.id], "remove");
+});
+
+test("people take back their own things; nobody else's but a steward's", () => {
+    const target = view(all).threads["d-a:1"][0].op;          // someone's note
+    const own = redact(`${target.user}:90`, target.user, target.id, "remove", 1);
+    assert.equal(view([...all, own]).threads["d-a:1"].some(n => n.op.id === target.id), false);
+    const other = redact("d-zz:90", "d-zz", target.id, "remove", 1);
+    assert.equal(view([...all, other]).threads["d-a:1"].some(n => n.op.id === target.id), true);
+    assert.deepEqual(view([...all, other]).redactions, {});
+});
+
+test("a removed upload leaves the library; a struck one keeps its place with its title ***", () => {
+    assert.equal(view([...all, redact("d-a:91", "d-a", "d-a:1", "remove", 1)]).documents["d-a:1"], undefined);
+    const struck = view([...all, redact("s:91", "s", "d-a:1", "strike", 1)], "d-a", ["s"]).documents["d-a:1"];
+    assert.equal(struck.properties.title, "***");
+    assert.equal(struck.hash, undefined);
+});
+
+test("a struck note is never a prompt", () => {
+    const target = view(all).threads["d-a:1"][0].op;
+    const v = view([...all, pin("d-a:93", "d-a", target.id), redact("s:94", "s", target.id, "strike", 59)], "d-a", ["s"]);
+    assert.equal(v.prompts["d-a:1"], undefined);
+});

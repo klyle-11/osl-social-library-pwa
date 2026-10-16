@@ -9,7 +9,7 @@ namespace osl {
 static const size_t BODY = 1000, NAME = 80, TITLE = 200, TEXT = 1000, URL = 2000;
 
 static const char* const TYPES[] = {"document", "annotation", "add-to-collection", "remove-from-collection",
-                                    "name-collection", "name-user", "hide", "describe", "collection-access"};
+                                    "name-collection", "name-user", "hide", "describe", "collection-access", "redact"};
 static const char* const DESCRIBE_FIELDS[] = {"title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors", "prompts"};
 
 static bool oneOf(const char* s, const char* const* list, size_t n) {
@@ -176,6 +176,12 @@ const char* validateOp(JsonObjectConst o) {
     }
     if (!strcmp(type, "name-user")) return STR(o, "name", NAME);
     if (!strcmp(type, "hide")) return STR(o, "target", 200);
+    if (!strcmp(type, "redact")) {
+        TRY(STR(o, "target", 200));
+        static const char* const MODES[] = {"strike", "remove"};
+        const char* mode = o["mode"].is<const char*>() ? o["mode"].as<const char*>() : nullptr;
+        return oneOf(mode, MODES, 2) ? nullptr : "mode must be strike or remove";
+    }
     if (!strcmp(type, "collection-access")) {
         TRY(collectionId(o));
         TRY(audience(o, "see", "see must be a string", "see must be everyone, owner or people:"));

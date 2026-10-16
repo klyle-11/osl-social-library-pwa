@@ -64,3 +64,39 @@ test("Kept is sent only to its owner, and to the library's admins", () => {
     assert.deepEqual(log.sharedWith("a-rosa", identity, true).map(o => o.id), ["d-a:20"]);
     done();
 });
+
+test("taking back: the words leave the file, a removed upload's file is freed, and neither comes back", async () => {
+    const { readFileSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "osl-log-"));
+    const paths = { log: join(dir, "ops.jsonl"), logId: join(dir, "log-id"), conflicts: join(dir, "conflicts.jsonl"), origins: join(dir, "origins.jsonl"), takenDown: join(dir, "taken-down.json") };
+    const log = new LibraryLog(paths);
+    const hash = "sha256-" + "b".repeat(64);
+    log.accept([
+        op({ id: "d-a:1", user: "d-a", timestamp: at(1), type: "document", fileType: "image/jpeg", hash, properties: { title: "Photo", author: "", type: "photo" } }),
+        op({ id: "d-a:2", user: "d-a", timestamp: at(2), type: "annotation", target: "d-a:1", body: "words to take back", access: "public" })
+    ], undefined, "10.0.0.5");
+    assert.equal(log.origins.get("d-a:2"), "10.0.0.5");
+    log.accept([
+        op({ id: "s:1", user: "s", timestamp: at(3), type: "redact", target: "d-a:2", mode: "strike" }),
+        op({ id: "s:2", user: "s", timestamp: at(4), type: "redact", target: "d-a:1", mode: "remove" })
+    ]);
+    const text = readFileSync(paths.log, "utf8");
+    assert.equal(text.includes("words to take back"), false);
+    assert.equal(text.includes(hash), false);
+    assert.deepEqual(log.takeFreed(), [hash]);
+    assert.equal(log.takenDown.has(hash), true);
+    // an old phone sends the original again: taken as a duplicate, nothing written
+    const r = log.accept([op({ id: "d-a:2", user: "d-a", timestamp: at(2), type: "annotation", target: "d-a:1", body: "words to take back", access: "public" })]);
+    assert.equal(r.duplicates, 1);
+    assert.equal(readFileSync(paths.log, "utf8").includes("words to take back"), false);
+    log.close();
+    // and after a restart, still gone, still taken down, appending still works
+    const again = new LibraryLog(paths);
+    assert.equal(JSON.stringify(again.log).includes("words to take back"), false);
+    assert.equal(again.takenDown.has(hash), true);
+    assert.equal(again.redacted.get("d-a:1"), "remove");
+    again.accept([op({ id: "d-a:3", user: "d-a", timestamp: at(5), type: "annotation", target: "d-a:1", body: "after", access: "public" })]);
+    assert.equal(new LibraryLog(paths).log.length, 5);
+    again.close();
+    rmSync(dir, { recursive: true, force: true });
+});

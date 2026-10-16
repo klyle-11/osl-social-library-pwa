@@ -36,7 +36,8 @@ export class LocalStorageStorage implements StorageAdapter {
     }
 
     async appendOps(ops: Op[]): Promise<void> {
-        const all = await this.loadOps();
+        const fresh = new Set(ops.map(o => o.id));
+        const all = (await this.loadOps()).filter(o => !fresh.has((o as { id?: string } | null)?.id ?? ""));
         all.push(...ops);
         write(this.prefix + "ops", JSON.stringify(all));
     }
@@ -51,6 +52,10 @@ export class LocalStorageStorage implements StorageAdapter {
 
     async putMedia(hash: string, data: string): Promise<void> {
         write(this.prefix + "media:" + hash, data);
+    }
+
+    async deleteMedia(hash: string): Promise<void> {
+        try { localStorage.removeItem(this.prefix + "media:" + hash); } catch { /* storage blocked */ }
     }
 
     async getMedia(hash: string): Promise<string | undefined> {

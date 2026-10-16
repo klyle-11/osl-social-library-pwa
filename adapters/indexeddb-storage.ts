@@ -66,6 +66,15 @@ export class IndexedDBStorage implements StorageAdapter {
         return this.put("media", hash, data);
     }
 
+    deleteMedia(hash: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction("media", "readwrite");
+            tx.objectStore("media").delete(hash);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
     async getMedia(hash: string): Promise<string | undefined> {
         return await request(this.db.transaction("media").objectStore("media").get(hash)) as string | undefined;
     }

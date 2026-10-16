@@ -26,6 +26,7 @@ function summary(op: Op, title: (id: string) => string): string {
         case "name-user": return `Set your name to ${op.name}`;
         case "hide": return "Hid a contribution";
         case "collection-access": return "Changed who may see or add to a collection";
+        case "redact": return op.mode === "strike" ? "Struck something out" : "Removed something";
     }
 }
 

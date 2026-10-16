@@ -1,7 +1,9 @@
 import {
     createAddToCollection, createAnnotation, createCollectionAccess, createDescribe, createDocument, createHide,
-    createNameCollection, createNameUser, createRemoveFromCollection, keptCollectionId, parseOpId, validateOp
+    createNameCollection, createNameUser, createRedact, createRemoveFromCollection, keptCollectionId, parseOpId, tombstone,
+    validateOp
 } from "./ops";
+import { canonical } from "./merge";
 import { mergeOps } from "./merge";
 import { makeBundle, readBundle, type Bundle } from "./bundle";
 import { rememberCursor } from "./cursor";
@@ -12,11 +14,12 @@ import type { Access, CollectionId, Conflict, DescribeField, DocumentProperties,
 // MemoryStorage (tests), LocalStorageStorage (fast route), IndexedDBStorage (gate four).
 export interface StorageAdapter {
     loadOps(): Promise<unknown[]>;              // unknown: everything is validated on the way in
-    appendOps(ops: Op[]): Promise<void>;
+    appendOps(ops: Op[]): Promise<void>;        // an op with an id already there replaces it (an erased one)
     getMeta(key: string): Promise<string | undefined>;
     setMeta(key: string, value: string): Promise<void>;
     putMedia(hash: string, data: string): Promise<void>;
     getMedia(hash: string): Promise<string | undefined>;
+    deleteMedia(hash: string): Promise<void>;
 }
 
 // Which kind of node answered: the library (the Pi) keeps everything; a drop point
@@ -193,6 +196,37 @@ export class LibraryStore {
 
     hide(target: OpId): Promise<OpId> {
         return this.commit(ctx => [createHide(ctx, target)]);
+    }
+
+    // take something back: "strike" leaves it in place with its words ***, "remove" takes it away
+    redact(target: OpId, mode: "strike" | "remove"): Promise<OpId> {
+        return this.commit(ctx => [createRedact(ctx, target, mode)]);
+    }
+
+    // Erase this device's own copy of what was taken back (the views say which, as only they
+    // know who may): the words go, and a removed upload's file. Nothing that is gone comes back.
+    async purge(ids: OpId[]): Promise<void> {
+        const byId = new Map(this.ops.map(o => [o.id, o]));
+        const erased: Op[] = [];
+        const files: string[] = [];
+        for (const id of ids) {
+            const op = byId.get(id);
+            if (!op) continue;
+            const t = tombstone(op);
+            if (canonical(t) === canonical(op)) continue;
+            erased.push(t);
+            if (op.type === "document" && op.hash) files.push(op.hash);
+        }
+        if (!erased.length) return;
+        await this.storage.appendOps(erased);
+        for (const hash of files) {
+            await this.storage.deleteMedia(hash);
+            this.mediaOutbox = this.mediaOutbox.filter(h => h !== hash);
+        }
+        if (files.length) await this.storage.setMeta("mediaOutbox", JSON.stringify(this.mediaOutbox));
+        const replace = new Map(erased.map(o => [o.id, o]));
+        this.ops = this.ops.map(o => replace.get(o.id) ?? o);
+        this.notify();
     }
 
     // fill in or correct a document's details: one op per changed field

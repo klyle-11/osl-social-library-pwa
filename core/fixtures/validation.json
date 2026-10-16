@@ -675,5 +675,52 @@
    "add": "owner"
   },
   "valid": false
+ },
+ {
+  "case": "redact: strike",
+  "op": {
+   "id": "a:50",
+   "type": "redact",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "b:1",
+   "mode": "strike"
+  },
+  "valid": true
+ },
+ {
+  "case": "redact: remove",
+  "op": {
+   "id": "a:50",
+   "type": "redact",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "b:1",
+   "mode": "remove"
+  },
+  "valid": true
+ },
+ {
+  "case": "redact: mode must be strike or remove",
+  "op": {
+   "id": "a:50",
+   "type": "redact",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "b:1",
+   "mode": "erase"
+  },
+  "valid": false
+ },
+ {
+  "case": "redact: target is required",
+  "op": {
+   "id": "a:50",
+   "type": "redact",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "mode": "strike"
+  },
+  "valid": false
  }
 ]

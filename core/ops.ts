@@ -1,13 +1,18 @@
 import type {
-    Access, AddToCollection, Annotation, CollectionAccess, CollectionId, Describe, DescribeField, DocumentProperties, Hide,
+    Access, AddToCollection, Annotation, CollectionAccess, CollectionId, Describe, Redact, DescribeField, DocumentProperties, Hide,
     LibraryDocument, NameCollection, NameUser, Op, OpContext, OpId, OpType,
     RemoveFromCollection
 } from "./types";
 
 export const OP_TYPES: readonly OpType[] = [
     "document", "annotation", "add-to-collection", "remove-from-collection",
-    "name-collection", "name-user", "hide", "describe", "collection-access"
+    "name-collection", "name-user", "hide", "describe", "collection-access", "redact"
 ];
+
+export const REDACT_MODES = ["strike", "remove"] as const;
+
+// what struck-out words become
+export const STRUCK = "***";
 
 export const DESCRIBE_FIELDS: readonly DescribeField[] = [
     "title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors", "prompts"
@@ -77,6 +82,26 @@ export function createHide(ctx: OpContext, target: OpId): Hide {
 
 export function createCollectionAccess(ctx: OpContext, collectionId: CollectionId, see: string, add: string): CollectionAccess {
     return { ...base(ctx), type: "collection-access", collectionId, see, add };
+}
+
+export function createRedact(ctx: OpContext, target: OpId, mode: Redact["mode"]): Redact {
+    return { ...base(ctx), type: "redact", target, mode };
+}
+
+// An op with its words (and its file) taken out, as it stays after a redact: same id,
+// same author, same place, nothing of what it said. Ops that carry no words are unchanged.
+export function tombstone(op: Op): Op {
+    switch (op.type) {
+        case "annotation": return { ...op, body: STRUCK };
+        case "name-user":
+        case "name-collection": return { ...op, name: STRUCK };
+        case "describe": return { ...op, value: op.field === "title" ? STRUCK : "" };
+        case "document": {
+            const { url: _url, hash: _hash, ...rest } = op;
+            return { ...rest, fileType: "text", properties: { title: STRUCK, author: "", type: "" } };
+        }
+        default: return op;
+    }
 }
 
 export function createDescribe(ctx: OpContext, target: OpId, field: DescribeField, value: string): Describe {
@@ -150,6 +175,8 @@ function checkFields(o: Fields): string | null {
             return str(o, "target", 200);
         case "collection-access":
             return collectionIdError(o) ?? audience(o, "see") ?? audience(o, "add");
+        case "redact":
+            return str(o, "target", 200) ?? (REDACT_MODES.includes(o.mode as Redact["mode"]) ? null : "mode must be strike or remove");
         case "describe": {
             const e = str(o, "target", 200);
             if (e) return e;

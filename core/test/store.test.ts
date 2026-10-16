@@ -238,3 +238,25 @@ test("an op committed while a sync starts is still sent (storage that takes its 
     assert.deepEqual(node.log.map(o => o.type === "annotation" && o.body), ["sent in the middle"]);
     assert.deepEqual(store.outbox, []);
 });
+
+test("erasing what was taken back: the words go from this device's own copy, and a removed upload's file", async () => {
+    const storage = new MemoryStorage();
+    const store = new LibraryStore(storage, env("d-me"));
+    await store.open();
+    const doc = await store.addDocument({ fileType: "image/jpeg", hash: "sha256-" + "a".repeat(64), properties: { title: "Photo", author: "", type: "photo" } });
+    await store.putMedia("sha256-" + "a".repeat(64), "data:image/jpeg;base64,AAAA");
+    const note = await store.annotate(doc, "something to take back", "public");
+    await store.redact(note, "strike");
+    await store.redact(doc, "remove");
+    await store.purge([note, doc]);
+    const stored = new Map((await storage.loadOps() as Op[]).map(o => [o.id, o]));
+    assert.equal((stored.get(note) as { body: string }).body, "***");
+    assert.equal((stored.get(doc) as { hash?: string }).hash, undefined);
+    assert.equal(await storage.getMedia("sha256-" + "a".repeat(64)), undefined);
+    assert.equal(store.mediaOutbox.length, 0);
+    assert.equal(JSON.stringify(store.ops).includes("something to take back"), false);
+    // reopened from storage, it's still gone
+    const again = new LibraryStore(storage, env("d-me"));
+    await again.open();
+    assert.equal(JSON.stringify(again.ops).includes("something to take back"), false);
+});
