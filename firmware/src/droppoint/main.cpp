@@ -23,6 +23,9 @@
 #include "lora_io.h"
 #include "osl_link.h"
 #include "osl_ops.h"
+#include "osl_status.h"
+
+static_assert(KIND_STATUS == osl::KIND_STATUS, "lora_io.h and osl_status.h must agree");
 
 static osl::Store store;
 static osl::Presence presence;
@@ -39,6 +42,8 @@ static osl::Link radioLink(io);  // not "link": that name is taken by POSIX link
 static DNSServer dns;
 static bool radioOk = false;
 static uint32_t fwdMsg = 0, fwdSeq = 0;
+static uint32_t statusMsg = 0, lastStatus = 0;
+static std::string appVersion;  // of the app in flash, so the library can tell a stale copy
 static uint32_t receivedFromArchive = 0, forwardedToArchive = 0;
 
 osl::Api& api() { return *theApi; }
@@ -124,11 +129,43 @@ static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
 // ---- radio: our forwarded op is durable at the archive ----
 
 static void onRemoteDurable(void*, uint32_t msgId) {
+    if (msgId == statusMsg) {
+        statusMsg = 0;
+        return;
+    }
     if (msgId != fwdMsg) return;
     StoreLock lock;
     store.forwarded(fwdSeq);
     forwardedToArchive++;
     fwdMsg = 0;
+}
+
+// The heartbeat, every STATUS_INTERVAL_S (the first soon after starting). It goes
+// ahead of the next queued op, so a long queue never hides the drop point.
+static void sendStatusIfDue() {
+    if (!radioOk || statusMsg || fwdMsg || radioLink.busy()) return;
+    uint32_t now = millis();
+    if (lastStatus ? now - lastStatus < STATUS_INTERVAL_S * 1000UL : now < 10000) return;
+    osl::DropStatus st;
+    st.id = nodeId.c_str();
+    st.name = DROP_NAME;
+    st.app = appVersion;
+    st.every = STATUS_INTERVAL_S;
+    st.up = now / 1000;
+    {
+        StoreLock lock;
+        st.waiting = store.waiting();
+        st.ops = store.lastSeq();
+        st.phones = presence.count(now);
+    }
+    st.flashFree = LittleFS.totalBytes() - LittleFS.usedBytes();
+    st.heard = radioLink.stats().framesReceived > 0;
+    st.rssi = io.lastRssi();
+    st.snr = io.lastSnr();
+    std::string msg(1, (char)KIND_STATUS);
+    msg += osl::statusMessage(st);
+    statusMsg = radioLink.send((const uint8_t*)msg.data(), msg.size());
+    lastStatus = now;
 }
 
 static void forwardNext() {
@@ -165,6 +202,12 @@ void setup() {
     size_t freeBytes = LittleFS.totalBytes() - LittleFS.usedBytes();
     size_t maxBytes = logSize + (freeBytes > OPS_RESERVE_BYTES ? freeBytes - OPS_RESERVE_BYTES : 0);
     if (!store.begin("/littlefs/osl", maxBytes)) Serial.println("op log could not be opened");
+    if (FILE* sw = fopen("/littlefs/www/sw.js", "rb")) {
+        std::string text(4096, '\0');
+        text.resize(fread(&text[0], 1, text.size(), sw));
+        fclose(sw);
+        appVersion = osl::appVersionIn(text.data(), text.size());
+    }
     Serial.printf("%s: %u ops, %u waiting to forward, log %u of %u bytes\n", nodeId.c_str(), (unsigned)store.lastSeq(),
                   (unsigned)store.waiting(), (unsigned)store.bytes(), (unsigned)maxBytes);
 
@@ -205,6 +248,7 @@ void loop() {
     dns.processNextRequest();
     io.poll(radioLink);
     radioLink.tick();
+    sendStatusIfDue();
     forwardNext();
 
     static uint32_t lastLog = 0;

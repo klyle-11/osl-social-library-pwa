@@ -20,6 +20,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Feature | State |
 |---|---|
 | Gallery front page, shared header with search and kind filter | Works |
+| Drop points page on the Pi (Sync → Drop points): the library's radio, and every drop point heard, connected or not heard since, with signal both ways | Rehearsed (`npm run rehearse:radio`); needs the boards |
 | Themes: Paper (`#fffffc`, the default), Selenized light, dark and black, and Maroon; chosen per device on You → Appearance | Works |
 | Reader: document on the left; details, presence and notes on the right (stacked on phones) | Works |
 | Whole-item notes, appearing on other devices within about two seconds | Works |
@@ -100,6 +101,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - **Ready for the bench:** two modems and `scripts/radio-test.mjs`. Fixed in 0cd8cee: the modem was sending every op without its kind byte, so the other board dropped it; the bench test would have shown 0 arrived.
 - **Drop point, ported to this branch:** it serves the app and the library's own `/api/ops` at the library's address (W-D10), keeps phones' notes in flash, and sends them to the Pi by radio; the Pi sends its notes back out. A phone's Sync screen shows notes "on the way by radio" until they come back from the library. The Pi's side is `node/radio.ts`, started with `RADIO_PORT`.
 - **Tested on a computer, not on boards:** `npm run rehearse:radio` runs the drop point's and the modem's code with a pretend radio, and walks phones in headless Chrome from the library to the drop point and back (17 checks). The drop point's board layer (`web.cpp`, `main.cpp`) has not been through the ESP32 compiler since the port: this session couldn't download it. See `firmware/README.md`.
+- **Drop points page:** each drop point says it's there every two minutes by radio, and the Pi lists it (Sync → Drop points): connected or not heard since, signal both ways, notes waiting, app version. The modem passes these on, so flash the modem from this version.
 - **Not ready:** more than one drop point. Frames carry no addresses yet; that is the relay work.
 
 ## Decisions on this branch
@@ -111,7 +113,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - **W-D5. Whole-item notes first.** The marginalia engine (passage anchors) comes later.
 - **W-D6. Details are ops.** A `describe` op per field, latest wins, the original document op never changes.
 - **W-D7. Roles come from a pairing code** on the node's own screen. Several presenters, one digitization station.
-- **W-D8. Custom LoRa firmware, ops only.** The Pi is the only home node; drop points are ESP32-only; secondary drop points will relay through the main one. Not compatible with Meshtastic.
+- **W-D8. Custom LoRa firmware, ops only.** The Pi is the only home node; drop points are ESP32-only; secondary drop points will relay through the main one. Not compatible with Meshtastic. *Reaffirmed 2026-10-16:* the first deployment is the Pi and one drop point about a mile away, which our own link covers. Reticulum (with LXMF propagation nodes) was considered for several drop points; it would make each drop point a small Linux computer with an RNode, so it is in the parking lot until there are more drop points, or until microReticulum runs on an ESP32 alone.
 - **W-D9. Sync is managed inside the app** (the Sync screen), not a separate app.
 - **W-D11. Paper is the default look.** An archive's page: `#fffffc` and ink, hairline rules, one plain sans-serif, small capitals for section labels (after Monoskop), with Selenized's colours. Selenized light, dark and black and the first Maroon colours are on You → Appearance, kept per device, so the big screen can be dark while phones stay on paper. Every theme's text colours pass 4.5:1.
 - **W-D10. People get the app at the Pi; drop points are for syncing.** The Pi has the library, the files, pairing and the big screen; a drop point is a write-only inbox with 1.5 MB of flash. Both answer at the **same address** (phones keep their data per address), and a drop point always carries the **exact build the Pi serves**: a phone moving between two different builds would switch app versions each time. Before the domain, that address is the Pi's fixed IP and port over plain http, which a drop point can take on its own Wi-Fi network; after it, the domain over HTTPS.
@@ -305,7 +307,7 @@ One op is about 200 bytes, which is roughly one LoRa packet, while one photo is 
 ---
 
 ## Parking lot
-TiddlyWiki export · zero-JS static export · Capacitor · ESP32-only node for small groups · Reticulum / Meshtastic · ActivityPub gateway (opt-in) · `Link` / `CommentBodyPosition` passage anchors (reader subproject, RR11–RR12) · solar drop-point power budget · moderation and TK labels · search/embeddings.
+TiddlyWiki export · zero-JS static export · Capacitor · ESP32-only node for small groups · Reticulum + LXMF for more than one drop point (or microReticulum on ESP32, when ready) · Meshtastic · ActivityPub gateway (opt-in) · `Link` / `CommentBodyPosition` passage anchors (reader subproject, RR11–RR12) · solar drop-point power budget · moderation and TK labels · search/embeddings.
 
 ## Scripts
 See "Run it" at the top of this file for the scripts on this branch.

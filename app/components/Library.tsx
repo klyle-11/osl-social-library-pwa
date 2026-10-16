@@ -11,6 +11,7 @@ import { SingleDocumentView } from "./SingleDocumentView";
 import { AddDocument } from "./AddDocument";
 import { You } from "./You";
 import { SyncScreen } from "./SyncScreen";
+import { DropPoints } from "./DropPoints";
 import { Present } from "./Present";
 
 // Root: provides the store to everything below, and switches views on the route.
@@ -40,6 +41,7 @@ export function Library({ store }: { store: LibraryStore }) {
                     {r.view === "add" && <AddDocument />}
                     {r.view === "you" && <You />}
                     {r.view === "sync" && <SyncScreen />}
+                    {r.view === "droppoints" && <DropPoints />}
                 </main>
             </div>
         </LibraryContext.Provider>

@@ -24,4 +24,5 @@ class LoRaIO : public osl::LinkIO {
 };
 
 // Both roles tag the first byte of every link message with its kind.
-constexpr uint8_t KIND_OP = 1;
+constexpr uint8_t KIND_OP = 1;      // an op, stored at the other end
+constexpr uint8_t KIND_STATUS = 2;  // a drop point's heartbeat (lib/osl_node/src/osl_status.h), only shown

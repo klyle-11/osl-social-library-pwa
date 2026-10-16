@@ -53,7 +53,9 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 
 - [x] Port the drop point firmware to this branch's op format and `/api/ops` (rehearsed on a computer: `npm run rehearse:radio`).
 - [ ] Build the drop point for a board (`pio run -e droppoint-xiao-s3`) and fix what the compiler finds in `src/droppoint/`.
-- [ ] Set `LIBRARY_ADDRESS` and `LIBRARY_PORT` in `firmware/include/config.h` to the Pi's fixed address; flash a drop point; walk a phone out to it.
+- [ ] Set `LIBRARY_ADDRESS` and `LIBRARY_PORT` in `firmware/include/config.h` to the Pi's fixed address, and `DROP_NAME`; flash a drop point; walk a phone out to it.
+- [x] The library lists its drop points: connected or not heard since, signal both ways, app version (Sync → Drop points).
+- [ ] Range test for the first drop point, a mile out: `STATUS_INTERVAL_S 30`, antennas high, read the signal on the Drop points page; steps in `firmware/README.md`, "Range". Write down where each antenna was and what the page said.
 - [x] Pi-side radio bridge in `node/` (`node/radio.ts`, `RADIO_PORT`).
 - [ ] Addresses and relaying, so more than two boards can share the air.
 - [x] Sync screen: the drop-point stop becomes real.

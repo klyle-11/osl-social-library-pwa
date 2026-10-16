@@ -55,6 +55,7 @@ class SimRadio : public osl::LinkIO {
     int fd() const { return fd_; }
 
     bool off = false;  // out of range: nothing sent or heard
+    float rssi = -96.5f, snr = 6.5f;  // what a real radio would report for the last frame; fixed here
 
    private:
     int fd_;

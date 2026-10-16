@@ -13,12 +13,14 @@
 #include <deque>
 #include <string>
 
+#include "../../lib/osl_node/src/osl_status.h"
 #include "sim_radio.h"
 
 static constexpr uint8_t KIND_OP = 1;  // as lora_io.h
 
 static int pty = -1;
 static osl::Link* radioLink;
+static SimRadio* radioIO;
 
 struct Outgoing {
     std::string id, msg;
@@ -46,6 +48,16 @@ static void hello() {
 }
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
+    if (len >= 2 && data[0] == osl::KIND_STATUS) {  // as the modem: passed up with its signal, durable at once
+        JsonDocument check;
+        if (!deserializeJson(check, (const char*)data + 1, len - 1) && check.is<JsonObject>()) {
+            char head[96];
+            snprintf(head, sizeof head, "{\"t\":\"status\",\"rssi\":%.1f,\"snr\":%.1f,\"status\":", radioIO->rssi, radioIO->snr);
+            out(head + std::string((const char*)data + 1, len - 1) + "}");
+        }
+        radioLink->markDurable(msgId);
+        return;
+    }
     if (len < 2 || data[0] != KIND_OP) {
         logLine("dropped a radio message of an unknown kind");
         radioLink->markDurable(msgId);
@@ -108,6 +120,7 @@ int main(int argc, char** argv) {
     SimRadio io(atoi(argv[1]), atoi(argv[2]), argc > 3 ? atof(argv[3]) : 0);
     osl::Link link(io, simTimings());
     radioLink = &link;
+    radioIO = &io;
     link.onDeliver(onDeliver, nullptr);
     link.onRemoteDurable(onRemoteDurable, nullptr);
 

@@ -127,6 +127,29 @@ try {
   t = await until(30000, async () => /0 on the way by radio/.test(await A.page.textContent('.sync-screen')));
   report('A\'s note came back out, so A knows it reached the library', t !== null, took(t));
 
+  // the library's list of drop points, fed by the drop point's heartbeat
+  const listed2 = async () => (await (await fetch(LIB + '/api/droppoints')).json()).droppoints.find((p) => p.id === 'drop-51a51a');
+  t = await until(15000, async () => (await listed2())?.state === 'connected');
+  const dp = await listed2();
+  report('the library lists the drop point as connected', t !== null, dp ? `${dp.name}, heard at the library: ${dp.atLibrary?.rssi} dBm` : 'not listed');
+  report('…with the same app as the library', dp?.sameApp === true, dp ? `app ${dp.app}` : '');
+  t = await until(15000, async () => (await listed2())?.phones >= 1);
+  report('…and A counted among the phones there', t !== null, took(t));
+  await go(B, '#/droppoints');
+  t = await until(10000, async () => /Simulated drop point[\s\S]*Connected/.test(await B.page.textContent('.drop-points')));
+  report('B sees it on the Drop points page', t !== null, took(t));
+  if (process.env.REHEARSE_SHOTS) await B.page.screenshot({ path: join(process.env.REHEARSE_SHOTS, 'droppoints-connected.png'), fullPage: true });
+  await fetch(DROP + '/sim/radio?on=0', { method: 'POST' });
+  t = await until(30000, async () => (await listed2())?.state === 'not-heard');
+  report('out of range for a while: "not heard since"', t !== null, took(t));
+  t = await until(10000, async () => /Not heard since/.test(await B.page.textContent('.drop-points')));
+  report('…on the page too, and still listed', t !== null);
+  if (process.env.REHEARSE_SHOTS) await B.page.screenshot({ path: join(process.env.REHEARSE_SHOTS, 'droppoints-not-heard.png'), fullPage: true });
+  await fetch(DROP + '/sim/radio?on=1', { method: 'POST' });
+  t = await until(15000, async () => (await listed2())?.state === 'connected');
+  report('back in range: connected again', t !== null, took(t));
+  await go(B, '#/document/steward%3A1');
+
   // the radio out of range, then the drop point restarted, with a note waiting in its flash
   await fetch(DROP + '/sim/radio?on=0', { method: 'POST' });
   await go(A, '#/document/steward%3A2');

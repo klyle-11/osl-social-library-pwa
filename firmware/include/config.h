@@ -64,6 +64,12 @@
 #define LIBRARY_PORT 8080                // the port the node runs on (PORT, 8080 by default)
 #define LIBRARY_DOMAIN "library.example.org"
 
+// What the library calls this drop point in its list (You → Sync → Drop points).
+#define DROP_NAME "Drop point"
+// How often it tells the library it's there, in seconds. One radio fragment each time;
+// shorter (30) while setting up or testing range, longer to save airtime.
+#define STATUS_INTERVAL_S 120
+
 #define AP_SSID "OSL Library"
 #define AP_PASSWORD ""      // "" = open network; or 8+ characters for WPA2
 #define AP_CHANNEL 6

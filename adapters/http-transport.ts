@@ -6,6 +6,21 @@ export type Role = "presenter" | "station";
 export type NodeInfo = { secure: boolean, addresses: string[], host: string };
 export type Uploaded = { hash: string, size: number, fileType: string };
 
+// What the library says about itself and every drop point it has heard (node/droppoints.ts).
+export type Signal = { rssi: number, snr: number };
+export type DropPointInfo = {
+    id: string, name: string, state: "connected" | "not-heard", firstSeen: string, lastHeard: string,
+    every: number, up: number, waiting: number, ops: number, flashFree: number, phones: number,
+    app: string, sameApp: boolean | null, atLibrary: Signal | null, atDropPoint: Signal | null
+};
+export type DropPointsInfo = {
+    library: {
+        app: string, phones: number,
+        radio: { port: string, connected: boolean, working: boolean | null, lastHeard: string | null, waitingToSend: number } | null
+    },
+    droppoints: DropPointInfo[]
+};
+
 // Talks to the node's sync endpoint. Paths are relative so the app works
 // from any address the node is reached at.
 export class HttpTransport implements Transport {
@@ -74,6 +89,23 @@ export class HttpTransport implements Transport {
         } catch {
             return null;
         }
+    }
+
+    // "elsewhere": this is a drop point, which keeps no list; null: no answer at all
+    async dropPoints(): Promise<DropPointsInfo | "elsewhere" | null> {
+        try {
+            const res = await fetch(this.base + "droppoints", { cache: "no-store" });
+            if (res.status === 404) return "elsewhere";
+            if (!res.ok) return null;
+            const body = await res.json() as DropPointsInfo;
+            return body && body.library && Array.isArray(body.droppoints) ? body : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async forgetDropPoint(token: string, id: string): Promise<void> {
+        await this.send("droppoints/forget", { token, id });
     }
 
     // trade the code on the node's screen for a token this device keeps

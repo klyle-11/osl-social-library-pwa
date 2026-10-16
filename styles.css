@@ -465,3 +465,26 @@ label { display: block; }
     .present__note:last-of-type { animation: arrive 0.4s ease-out; }
     @keyframes arrive { from { opacity: 0; transform: translateY(0.5rem); } }
 }
+
+/* ---------- drop points ---------- */
+
+.drop-points { max-width: 44rem; margin: 0 auto; }
+.drop-points__title { font-size: 1.75rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule); }
+.drop-points__intro, .drop-points__text { margin: 0.5rem 0 1rem; color: var(--muted); }
+.drop-points__list { display: grid; }
+.drop-point { padding: 1rem 0 1rem 0.9rem; border-left: 3px solid var(--line); border-bottom: 1px solid var(--line); }
+.drop-point--connected { border-left-color: var(--live); }
+.drop-point--not-heard { border-left-color: var(--warn); }
+.drop-point--library { margin-bottom: 1.5rem; border-bottom-color: var(--rule); }
+.drop-point__name { font-size: 1.125rem; }
+.drop-point__id { margin-left: 0.4rem; font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
+.drop-point__state { display: flex; gap: 0.5rem; align-items: center; margin: 0.25rem 0 0.6rem; }
+.drop-point--connected .drop-point__state { color: var(--live); }
+.drop-point--not-heard .drop-point__state { color: var(--warn); }
+.drop-point__dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: currentColor; flex: none; }
+.drop-point--not-heard .drop-point__dot { background: none; border: 2px solid currentColor; }
+.drop-point__facts { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; font-size: 0.9375rem; }
+.drop-point__facts dt { color: var(--muted); }
+.drop-point__warn { color: var(--warn); }
+.drop-point__forget { margin-top: 0.75rem; min-height: 2rem; padding: 0.1rem 0.6rem; font-size: 0.8125rem; }
+.drop-point__note { margin-bottom: 0.4rem; font-size: 0.8125rem; color: var(--muted); }

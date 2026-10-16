@@ -18,6 +18,7 @@ import { isShareable } from "../core/store";
 import { PresenceBoard } from "../core/presence";
 import { positionFor } from "../core/cursor";
 import { startRadio, type Bridge } from "./radio";
+import { DropPointRegister } from "./droppoints";
 import type { Op } from "../core/types";
 
 const ROOT = resolve(process.env.OSL_ROOT ?? ".");
@@ -122,13 +123,29 @@ function accept(input: unknown[]) {
 
 // ---- the radio (gate seven): RADIO_PORT is the LoRa modem's serial device, e.g. /dev/ttyACM0 ----
 const RADIO_POSITION = join(DATA, "radio-position");
+const DROP_POINTS = join(DATA, "droppoints.json");
+const writeAside = (file: string, text: string) => { writeFileSync(file + ".tmp", text); renameSync(file + ".tmp", file); };
+
+// every drop point this library has heard, from their heartbeats (node/droppoints.ts)
+const dropPoints = new DropPointRegister(
+    existsSync(DROP_POINTS) ? readFileSync(DROP_POINTS, "utf8") : null,
+    json => writeAside(DROP_POINTS, json)
+);
+
 const radio: Bridge | null = process.env.RADIO_PORT
     ? startRadio(process.env.RADIO_PORT, {
         log, logId: LOG_ID, accept,
         loadPosition: () => (existsSync(RADIO_POSITION) ? readFileSync(RADIO_POSITION, "utf8").trim() : null),
-        savePosition: p => { writeFileSync(RADIO_POSITION + ".tmp", p); renameSync(RADIO_POSITION + ".tmp", RADIO_POSITION); }
+        savePosition: p => writeAside(RADIO_POSITION, p),
+        onStatus: line => { dropPoints.heard(line, new Date()); }
     })
     : null;
+
+// the app version this node serves: a drop point must carry the same (README, W-D10)
+function appVersion(): string {
+    const sw = join(STATIC, "sw.js");
+    return existsSync(sw) ? /osl-shell-([0-9a-f]+)/.exec(readFileSync(sw, "utf8"))?.[1] ?? "dev" : "";
+}
 
 // ---- who is here, and what the presenting screen shows: memory only, never the log ----
 const board = new PresenceBoard();
@@ -292,6 +309,34 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
 
     // what a joining phone needs to be told: the addresses this node answers on
+    // the library and every drop point it has heard: for the Drop points page
+    if (path === "/api/droppoints" && req.method === "GET") {
+        const version = appVersion();
+        const modem = radio?.status() ?? null;
+        return json(res, 200, {
+            library: {
+                app: version,
+                phones: board.snapshot(Date.now()).online.length,
+                radio: modem && {
+                    port: process.env.RADIO_PORT,
+                    // the modem says hello every 30 s
+                    connected: !!modem.lastHeardFromModem && Date.now() - Date.parse(modem.lastHeardFromModem) < 90_000,
+                    working: modem.modem?.radio ?? null,
+                    lastHeard: modem.lastHeardFromModem,
+                    waitingToSend: modem.waitingToSend
+                }
+            },
+            droppoints: dropPoints.list(new Date(), version)
+        });
+    }
+
+    // a paired presenter takes a drop point off the list (it reappears if it is heard again)
+    if (path === "/api/droppoints/forget" && req.method === "POST") {
+        const body = await readBody(req);
+        if (!hasRole(body.token, "presenter")) return json(res, 403, { error: "Only a paired presenter can change the list." });
+        return json(res, dropPoints.forget(String(body.id ?? "")) ? 200 : 404, {});
+    }
+
     if (path === "/api/radio" && req.method === "GET") {
         return json(res, 200, radio ? radio.status() : { radio: "off", how: "start the node with RADIO_PORT set to the modem's serial device" });
     }
@@ -451,8 +496,7 @@ if (secure) {
 server.listen(PORT, "0.0.0.0", () => {
     const scheme = secure ? "https" : "http";
     // the version a drop point must match (npm run build:firmware prints its own)
-    const swFile = join(STATIC, "sw.js");
-    const version = existsSync(swFile) ? /osl-shell-([0-9a-f]+)/.exec(readFileSync(swFile, "utf8"))?.[1] ?? "dev" : "?";
+    const version = appVersion() || "?";
     console.log(`\nOSL node running — ${log.length} ops in the log, app version ${version}${radio ? `, radio on ${process.env.RADIO_PORT}` : ""}\n`);
     console.log(`  this laptop:  ${scheme}://localhost:${PORT}`);
     for (const a of localAddresses()) console.log(`  phones:       ${scheme}://${a}:${PORT}`);

@@ -65,6 +65,22 @@ static void hello() {
 }
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
+    if (len >= 2 && data[0] == KIND_STATUS) {
+        // A drop point's heartbeat: handed to the Pi with how this board heard it.
+        // Nothing to keep, so it is durable at once.
+        JsonDocument check;
+        if (!deserializeJson(check, (const char*)data + 1, len - 1) && check.is<JsonObject>()) {
+            Serial.print("{\"t\":\"status\",\"rssi\":");
+            Serial.print(io.lastRssi(), 1);
+            Serial.print(",\"snr\":");
+            Serial.print(io.lastSnr(), 1);
+            Serial.print(",\"status\":");
+            Serial.write(data + 1, len - 1);
+            Serial.println("}");
+        }
+        radioLink.markDurable(msgId);
+        return;
+    }
     if (len < 2 || data[0] != KIND_OP) {
         logLine("dropped a radio message of an unknown kind");
         radioLink.markDurable(msgId);  // unknown kind: nothing to keep

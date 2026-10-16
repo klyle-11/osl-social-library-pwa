@@ -74,6 +74,8 @@ export function SyncScreen() {
                 </li>
             </ol>
 
+            <p class="sync-screen__text"><a href={href({ view: "droppoints" })}>Drop points: which are connected</a></p>
+
             <section class="sync-screen__section">
                 <h3 class="sync-screen__heading">Waiting to send</h3>
                 {waiting.length === 0

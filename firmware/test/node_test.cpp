@@ -13,6 +13,7 @@
 
 #include "../lib/osl_node/src/osl_api.h"
 #include "../lib/osl_node/src/osl_ops.h"
+#include "../lib/osl_node/src/osl_status.h"
 #include "../lib/osl_node/src/osl_store.h"
 
 using namespace osl;
@@ -222,6 +223,38 @@ int main() {
                       "{\"ops\":[" + ann("R:1") + "," + ann("R:2", big.c_str()) + "," + ann("R:3") + "," + ann("R:4") + "]}");
         CHECK(d["added"] == 2);
         CHECK(d["keep"].size() == 2 && d["keep"][0] == "R:2" && d["keep"][1] == "R:4");
+    }
+
+    // ---- the heartbeat: one radio fragment, readable JSON ----
+    {
+        DropStatus st;
+        st.id = "drop-a1b2c3";
+        st.name = "Community garden \"annex\"";
+        st.app = "a4092bd8ec7f";
+        st.every = 120;
+        st.up = 86400;
+        st.waiting = 3;
+        st.ops = 1200;
+        st.flashFree = 812000;
+        st.phones = 2;
+        st.heard = true;
+        st.rssi = -97.54f;
+        st.snr = 6.25f;
+        std::string m = statusMessage(st);
+        CHECK(m.size() + 1 <= 200);  // with the kind byte, one fragment
+        JsonDocument d;
+        CHECK(!deserializeJson(d, m));
+        CHECK(d["id"] == "drop-a1b2c3" && d["name"] == "Community garden \"annex\"" && d["every"] == 120);
+        CHECK(d["waiting"] == 3 && d["phones"] == 2 && d["app"] == "a4092bd8ec7f");
+        CHECK(d["rssi"].as<float>() > -97.6f && d["rssi"].as<float>() < -97.4f);
+        st.heard = false;
+        JsonDocument quiet;
+        deserializeJson(quiet, statusMessage(st));
+        CHECK(quiet["rssi"].isNull());  // nothing heard yet: no made-up signal
+
+        const char* sw = "(()=>{var e=`osl-shell-a4092bd8ec7f`,s=[\"./\"]";
+        CHECK(appVersionIn(sw, strlen(sw)) == "a4092bd8ec7f");
+        CHECK(appVersionIn("no version here", 15) == "");
     }
 
     // ---- query strings ----

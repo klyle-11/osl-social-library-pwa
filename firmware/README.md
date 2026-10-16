@@ -108,7 +108,7 @@ The node prints `radio on /dev/ttyACM0`; `http://<pi>:8080/api/radio` shows the 
 
 ### 2. The drop point
 
-Set `LIBRARY_ADDRESS` and `LIBRARY_PORT` in `include/config.h` to the Pi's, then:
+Set `LIBRARY_ADDRESS` and `LIBRARY_PORT` in `include/config.h` to the Pi's, and give the drop point a name for the library's list (`DROP_NAME`, e.g. `"Community garden"`). Then:
 
 ```sh
 npm run build:firmware                          # the app, as the Pi serves it, into firmware/data/
@@ -129,13 +129,32 @@ pio device monitor                              # a status line in JSON every 30
 
 **Not at the drop point:** photos and files (they wait on the phone, with the document they belong to), pairing, the big screen.
 
-### 4. Gate seven "done when"
+### 4. The library's list of drop points
+
+Every `STATUS_INTERVAL_S` seconds (120 by default) the drop point tells the library it's there: one radio fragment with its name, notes waiting to cross, phones using it, free flash, the app version it carries, and how well it hears the library. The modem adds how well the library hears it. On the Pi, **Sync → Drop points** (`#/droppoints`) lists the library and every drop point it has heard:
+
+- **Connected**, while it's heard within 2½ of its own intervals (one lost heartbeat is normal on a radio link), or **Not heard since …**, kept on the list with its last figures.
+- **Heard at the library / Hears the library**: the signal both ways, in words (strong, good, weak, barely) and in numbers (RSSI and SNR).
+- **App**: whether it carries the library's build. If not, re-flash it (W-D10).
+
+A paired presenter can take a retired drop point off the list; it comes back if it's heard again. The list lives in `data/droppoints.json`. Anything with the same radio settings can say it's a drop point (frames aren't signed yet), so every field is checked and the list is capped at 64.
+
+### 5. Range: a drop point a mile away
+
+A mile is reachable with these boards, but only with the antennas placed well: height and a clear line between the two matter far more than anything in the settings.
+
+1. Set `STATUS_INTERVAL_S` to 30 while placing it, so the Drop points page updates every half minute; set it back to 120 after.
+2. Put both antennas as high as you can, upright, by a window facing the other site if not outdoors.
+3. Read **Heard at the library** and **Hears the library**. *Strong* or *good* (SNR 0 and up) is a link that will hold; *weak* will drop notes into retries; *barely* is about to fail.
+4. If it's weak, in this order: raise the antennas; raise `LORA_POWER_DBM` (14 now, the SX1262 goes to 22) within your country's rules; raise `LORA_SF` to 10 or 11 on **both** boards (each step adds range and roughly doubles the time on air). In the US, keep `LORA_BW_KHZ` at 500: that is what lets a single fixed channel meet the FCC rules (see `config.h`).
+
+### 6. Gate seven "done when"
 
 With no internet anywhere: a phone writes at the drop point, the note crosses the radio, and it appears on a different phone at the Pi.
 
 Then try to break it:
 - Unplug the drop point mid-transfer and plug it back in. Nothing is lost, and it resumes where it left off.
-- Unplug the modem, or stop the node. The drop point keeps polling and delivers once they're back.
+- Unplug the modem, or stop the node. The drop point keeps polling and delivers once they're back, and the Drop points page shows it "not heard since" while it's away.
 - Send the same note twice: it is stored once.
 
 ## Before the boards: rehearse it on a computer
@@ -145,7 +164,7 @@ npm run test:firmware        # link, op log, validation and API, on this compute
 npm run rehearse:radio       # library + drop point + radio, with phones in headless Chrome
 ```
 
-`rehearse:radio` compiles the drop point's and the modem's own code for the computer (`test/sim/`), joins them with a pretend radio, and walks a phone from the library to the drop point and back. It found the modem bug fixed in 0cd8cee (every op arriving as an unknown message).
+`rehearse:radio` compiles the drop point's and the modem's own code for the computer (`test/sim/`), joins them with a pretend radio, and walks a phone from the library to the drop point and back. It also checks the Drop points page: connected, not heard while out of range, connected again. It found the modem bug fixed in 0cd8cee (every op arriving as an unknown message).
 
 ## Status and limits
 

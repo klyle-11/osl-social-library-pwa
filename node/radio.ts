@@ -11,6 +11,7 @@
 // The modem speaks one JSON object per line (firmware/src/modem/main.cpp):
 //   to the modem    {"t":"send","id":"<op id>","op":{...}}  {"t":"durable","m":<msg>}  {"t":"ping"}
 //   from the modem  {"t":"recv","m":<msg>,"op":{...}}  {"t":"sent","id":"<op id>"}  {"t":"hello",...}  {"t":"log","msg":"..."}
+//                   {"t":"status","rssi":..,"snr":..,"status":{...}}   a drop point's heartbeat
 
 import { closeSync, createReadStream, openSync, writeSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -25,6 +26,7 @@ export type BridgeDeps = {
     loadPosition(): string | null,                    // "<log id>.<n>": how far the return path has sent
     savePosition(position: string): void,
     write(line: string): void,                        // one line to the modem
+    onStatus?: (line: Record<string, unknown>) => void,   // a drop point's heartbeat (node/droppoints.ts)
     now?: () => number,
     say?: (msg: string) => void
 };
@@ -111,6 +113,9 @@ export function createBridge(d: BridgeDeps) {
                     delivered++;
                     pump();
                 }
+                break;
+            case "status":
+                d.onStatus?.(msg);
                 break;
             case "hello":
                 modem = { radio: msg.radio === true, rssi: msg.rssi as number, snr: msg.snr as number, stats: msg.stats };

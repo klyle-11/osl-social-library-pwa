@@ -18,6 +18,7 @@
 
 #include "../../lib/osl_node/src/osl_api.h"
 #include "../../lib/osl_node/src/osl_ops.h"
+#include "../../lib/osl_node/src/osl_status.h"
 #include "../../lib/osl_node/src/osl_store.h"
 #include "sim_radio.h"
 
@@ -28,6 +29,9 @@ static osl::Store store;
 static osl::Link* radioLink;
 static SimRadio* radio;
 static uint32_t fwdMsg = 0, fwdSeq = 0;
+static uint32_t statusMsg = 0, lastStatus = 0, statusEvery = 2;  // seconds; OSL_STATUS_S
+static osl::Presence presence;
+static std::string appVersion;
 static unsigned forwarded = 0, received = 0;
 
 // ---- radio: as main.cpp ----
@@ -54,10 +58,38 @@ static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
 }
 
 static void onRemoteDurable(void*, uint32_t msgId) {
+    if (msgId == statusMsg) {
+        statusMsg = 0;
+        return;
+    }
     if (msgId != fwdMsg) return;
     store.forwarded(fwdSeq);
     forwarded++;
     fwdMsg = 0;
+}
+
+// as sendStatusIfDue() in main.cpp
+static void sendStatusIfDue() {
+    if (radio->off || statusMsg || fwdMsg || radioLink->busy()) return;
+    uint32_t now = radio->millis();
+    if (lastStatus && now - lastStatus < statusEvery * 1000) return;
+    osl::DropStatus st;
+    st.id = NODE_ID;
+    st.name = "Simulated drop point";
+    st.app = appVersion;
+    st.every = statusEvery;
+    st.up = 0;
+    st.waiting = store.waiting();
+    st.ops = store.lastSeq();
+    st.phones = presence.count(now);
+    st.flashFree = 900000;
+    st.heard = radioLink->stats().framesReceived > 0;
+    st.rssi = radio->rssi;
+    st.snr = radio->snr;
+    std::string msg(1, (char)osl::KIND_STATUS);
+    msg += osl::statusMessage(st);
+    statusMsg = radioLink->send((const uint8_t*)msg.data(), msg.size());
+    lastStatus = now;
 }
 
 static void forwardNext() {
@@ -188,7 +220,13 @@ int main(int argc, char** argv) {
     link.onDeliver(onDeliver, nullptr);
     link.onRemoteDurable(onRemoteDurable, nullptr);
 
-    osl::Presence presence;
+    if (const char* e = getenv("OSL_STATUS_S")) statusEvery = (uint32_t)atoi(e);
+    {
+        std::ifstream sw(www + "/sw.js");
+        std::stringstream text;
+        text << sw.rdbuf();
+        appVersion = osl::appVersionIn(text.str().data(), text.str().size());
+    }
     osl::ApiConfig cfg;
     cfg.nodeId = NODE_ID;
     std::string address = std::string("http://localhost:") + argv[1];
@@ -225,6 +263,7 @@ int main(int argc, char** argv) {
         }
         io.poll(link);
         link.tick();
+        sendStatusIfDue();
         forwardNext();
     }
 }
