@@ -14,6 +14,8 @@ export type Directory = {
     me: Me | null,
     signup: boolean,
     setup: boolean,     // no accounts yet: the first needs the pairing code, and looks after the node
+    contact?: string,   // how to reach whoever looks after the node
+    banned?: Banned,    // this browser, device or account may not use the library
     library: {
         id: string, name: string, protected: boolean, locked: boolean,
         upload?: Uploader[], mayUpload?: boolean, roles?: LibraryRole[], watch?: { folder: string } | null, droppoints?: boolean
@@ -30,6 +32,24 @@ export type AccountInfo = { id: string, username: string, name: string, admin?: 
 export class LockedError extends Error {
     constructor(message: string) { super(message); this.name = "LockedError"; }
 }
+
+// The library's admins banned this device, address or account (node/moderation.ts).
+export type Banned = { message: string, contact?: string };
+export class BannedError extends Error {
+    banned: Banned;
+    constructor(banned: Banned) { super(banned.message || "You can't use this library."); this.name = "BannedError"; this.banned = banned; }
+}
+
+// For the library's stewards and admins (node/server.ts, /api/moderation/).
+export type ActivityEntry = {
+    at: number, op: Op, from: string | null, name: string, account: string | null,
+    redacted: "strike" | "remove" | null, about: string | null
+};
+export type Ban = { id: string, library: string, device?: string, ip?: string, account?: string, message: string, contact: boolean, by: string, at: string };
+export type Takedown = {
+    id: string, at: string, library: string, name: string, contact: string, work: string, where: string,
+    kind: "copyright" | "privacy" | "harm" | "other", statement: boolean, signature: string, from: string
+};
 
 export type Role = "presenter" | "station";
 export type NodeInfo = { secure: boolean, addresses: string[], host: string };
@@ -98,10 +118,13 @@ export class HttpTransport implements Transport {
     role: NodeRole = "library";
 
     async pushOps(ops: Op[]): Promise<PushReply> {
-        const body = await this.send("ops", { ops }, true) as { keep?: unknown, node?: { role?: unknown } } | null;
+        const body = await this.send("ops", { ops }, true) as { keep?: unknown, refused?: unknown, node?: { role?: unknown } } | null;
         const keep = Array.isArray(body?.keep) ? body.keep.filter((id): id is OpId => typeof id === "string") : [];
+        const refused = Array.isArray(body?.refused)
+            ? body.refused.filter((r): r is { id: string, reason: string } => typeof r?.id === "string" && typeof r?.reason === "string")
+            : [];
         this.role = body?.node?.role === "droppoint" ? "droppoint" : "library";
-        return { keep, role: this.role };
+        return { keep, role: this.role, refused };
     }
 
     async pullOps(cursor: string): Promise<{ ops: unknown[], cursor: string }> {
@@ -112,6 +135,10 @@ export class HttpTransport implements Transport {
         }
         if (this.access) query.set("access", this.access);
         const res = await fetch(this.url("ops", query), { cache: "no-store" });
+        if (res.status === 403) {
+            const body = await res.clone().json().catch(() => ({})) as { banned?: Banned };
+            if (body.banned) throw new BannedError(body.banned);
+        }
         if (res.status === 401) {
             const body = await res.json().catch(() => ({})) as { error?: string, node?: { role?: unknown } };
             this.role = body.node?.role === "droppoint" ? "droppoint" : "library";
@@ -184,7 +211,8 @@ export class HttpTransport implements Transport {
     // null: no node answered (offline, or a drop point, which keeps no accounts)
     async directory(): Promise<Directory | null> {
         try {
-            const res = await fetch(this.url("directory"), { cache: "no-store" });
+            const query = this.hello ? new URLSearchParams({ device: this.hello.user }) : undefined;
+            const res = await fetch(this.url("directory", query), { cache: "no-store" });
             const body = await res.json().catch(() => null) as Directory | null;
             return body && Array.isArray(body.libraries) && body.library ? body : null;
         } catch {
@@ -234,6 +262,34 @@ export class HttpTransport implements Transport {
     }
     deleteLibrary() { return this.send("libraries/delete", {}, true); }
 
+    // ---- moderation (stewards and admins) ----
+
+    private async get<T>(path: string, query?: URLSearchParams): Promise<T> {
+        const res = await fetch(this.url(path, query), { cache: "no-store" });
+        const body = await res.json().catch(() => ({})) as T & { error?: string };
+        if (!res.ok) throw new Error(body.error ?? `${path}: ${res.status}`);
+        return body;
+    }
+    // newest first; `before` is where the last page ended
+    activity(before?: number): Promise<{ entries: ActivityEntry[], total: number, next: number }> {
+        return this.get("moderation/activity", new URLSearchParams(before !== undefined ? { before: String(before), limit: "100" } : { limit: "100" }));
+    }
+    bans(all = false): Promise<{ bans: Ban[], contact: string }> {
+        return this.get("moderation/bans", all ? new URLSearchParams({ all: "1" }) : undefined);
+    }
+    ban(fields: { device?: string, ip?: string, account?: string, message: string, contact: boolean, everywhere: boolean }) {
+        return this.send("moderation/ban", fields, true);
+    }
+    unban(id: string) { return this.send("moderation/unban", { id }, true); }
+    setContact(contact: string) { return this.send("moderation/contact", { contact }, true); }
+    takedowns(all = false): Promise<{ takedowns: Takedown[] }> {
+        return this.get("moderation/takedowns", all ? new URLSearchParams({ all: "1" }) : undefined);
+    }
+    // anyone: something they want taken down (the Takedown page)
+    takedown(request: { kind: Takedown["kind"], name: string, contact: string, work: string, where: string, statement: boolean, signature: string }) {
+        return this.send("takedown", request, true);
+    }
+
     // Whole files. The device's pairing tokens count where only presenters or digitizers
     // may add documents. XMLHttpRequest because fetch can't report upload progress, and
     // a film takes long enough to need it.
@@ -280,6 +336,8 @@ export class HttpTransport implements Transport {
         if (!res.ok) {
             const message = (parsed as { error?: string } | null)?.error;
             if (res.status === 401 && (parsed as { locked?: boolean } | null)?.locked) throw new LockedError(message ?? "This library is protected.");
+            const banned = (parsed as { banned?: Banned } | null)?.banned;
+            if (res.status === 403 && banned) throw new BannedError(banned);
             throw new Error(message ?? `${path} failed: ${res.status} ${text}`);
         }
         return parsed;

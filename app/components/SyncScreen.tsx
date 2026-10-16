@@ -12,6 +12,7 @@ const STATE_TEXT = {
     offline: "This device is offline. Your work is saved here and will send when you're back.",
     paused: "Syncing is paused. Your work stays on this device until you resume.",
     locked: "This library is protected. Your work stays on this device until you enter its password or sign in.",
+    banned: "The library's admins have stopped this device from using it. What you wrote stays on this device.",
     droppoint: "Handed in at a drop point. From here it goes on to the library by radio."
 };
 

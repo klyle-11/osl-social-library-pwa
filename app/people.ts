@@ -1,7 +1,7 @@
 // The directory (who is who, roles, settings) and signing in and out (W-D12).
 import type { LibraryStore } from "../core/store";
 import { LockedError, type Directory, type HttpTransport } from "../adapters/http-transport";
-import { directory, locked, missing, tell, viewer } from "./state";
+import { banned, directory, locked, missing, tell, viewer } from "./state";
 import { libraryId } from "./library";
 
 const KEY = "directory";
@@ -66,6 +66,7 @@ export function refreshDirectory(): Promise<void> {
 function apply(store: LibraryStore, d: Directory) {
     directory.value = d;
     locked.value = d.library.locked;
+    banned.value = d.banned ?? null;
     // this device writes for its account only when the node says it is that account's
     const owner = d.devices?.[store.user];
     store.setPerson(owner && owner === d.me?.id ? owner : null);

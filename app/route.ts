@@ -4,7 +4,7 @@ import { signal } from "@preact/signals";
 export type Route =
     | { view: "gallery" } | { view: "activity" } | { view: "collections" } | { view: "add" } | { view: "you" }
     | { view: "sync" } | { view: "present" } | { view: "droppoints" } | { view: "suggest" } | { view: "suggestions" }
-    | { view: "account" } | { view: "libraries" } | { view: "manage" }
+    | { view: "account" } | { view: "libraries" } | { view: "manage" } | { view: "moderate" } | { view: "takedown" }
     | { view: "document", id: string } | { view: "collection", id: string };
 
 export function parseRoute(hash: string): Route {
@@ -12,7 +12,7 @@ export function parseRoute(hash: string): Route {
     const arg = decodeURIComponent(id);
     switch (view) {
         case "activity": case "collections": case "add": case "you": case "sync": case "present": case "droppoints": case "suggest": case "suggestions":
-        case "account": case "libraries": case "manage": return { view };
+        case "account": case "libraries": case "manage": case "moderate": case "takedown": return { view };
         case "document": return arg ? { view, id: arg } : { view: "gallery" };
         case "collection": return arg ? { view, id: arg } : { view: "collections" };
         default: return { view: "gallery" };

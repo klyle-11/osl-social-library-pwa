@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Access } from "../../core/types";
 import { answering, attempt, isMe, isSteward, presence, useLibrary, viewer, views } from "../state";
-import { PinButton } from "./AnnotationThread";
+import { PinButton, TakeBack } from "./AnnotationThread";
 import { displayName, listPeople, when } from "../format";
 
 const ACCESS: [Access, string][] = [["public", "Everyone, with my name"], ["anonymous", "Everyone, without my name"], ["private", "Only me"]];
@@ -92,12 +92,15 @@ export function NotesDock({ documentId }: { documentId: string }) {
                                         <span class="mark">{author(a)}</span> · <time dateTime={a.op.timestamp}>{when(a.op.timestamp)}</time>
                                         {a.op.access === "private" && " · only you"}
                                     </p>
-                                    <p class="notes-dock__body">{a.op.body}</p>
+                                    {a.struck
+                                        ? <p class="notes-dock__body annotation-thread__body--struck" aria-label="Struck out">***</p>
+                                        : <p class="notes-dock__body">{a.op.body}</p>}
                                     <button class="notes-dock__reply" type="button" onClick={() => {
                                         setReplyTo({ id: a.op.id, name: author(a) });
                                         input.current?.focus();
                                     }}>Reply</button>
-                                    {mayPin && a.op.access !== "private" && <PinButton documentId={documentId} noteId={a.op.id} small />}
+                                    {mayPin && a.op.access !== "private" && !a.struck && <PinButton documentId={documentId} noteId={a.op.id} small />}
+                                    <TakeBack id={a.op.id} mine={a.mine} struck={a.struck} />
                                 </li>
                             ))}
                         </ol>

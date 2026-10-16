@@ -21,6 +21,23 @@ export function PinButton({ documentId, noteId, small = false }: { documentId: s
     );
 }
 
+// Your own note: delete it. Someone else's, as a steward: strike it out (it stays, with
+// who wrote it, its words ***) or remove it. Either way its words are erased everywhere.
+export function TakeBack({ id, mine, struck = false }: { id: string, mine: boolean, struck?: boolean }) {
+    const store = useLibrary();
+    const take = (mode: "strike" | "remove", question: string) => {
+        if (confirm(question)) void attempt(() => store.redact(id, mode));
+    };
+    if (mine) return <button class="take-back" type="button" onClick={() => take("remove", "Delete your note? It's erased from the library and from phones as they connect.")}>Delete</button>;
+    if (!isSteward()) return null;
+    return (
+        <>
+            {!struck && <button class="take-back" type="button" onClick={() => take("strike", "Strike it out? It stays, with who wrote it, and its words become ***.")}>Strike out</button>}
+            <button class="take-back" type="button" onClick={() => take("remove", "Remove it altogether?")}>Remove</button>
+        </>
+    );
+}
+
 const MAX_INDENT = 4;   // deeper replies stop stepping right, and say who they answer instead
 
 export function AnnotationThread({ documentId }: { documentId: string }) {
@@ -49,14 +66,14 @@ export function AnnotationThread({ documentId }: { documentId: string }) {
                             {" · "}<time class="annotation-thread__time" dateTime={op.timestamp}>{when(op.timestamp)}</time>
                             {op.access !== "public" && <span class="annotation-thread__access"> · {op.access === "private" ? "only you can see this" : "shown without your name"}</span>}
                         </p>
-                        <p class="annotation-thread__body">{op.body}</p>
+                        {a.struck
+                            ? <p class="annotation-thread__body annotation-thread__body--struck" aria-label="Struck out">***</p>
+                            : <p class="annotation-thread__body">{op.body}</p>}
                         <p class="annotation-thread__actions">
                             <button class="annotation-thread__reply" type="button" aria-expanded={replying === op.id}
                                 onClick={() => setReplying(replying === op.id ? null : op.id)}>Reply</button>
-                            {mayPin && op.access !== "private" && <PinButton documentId={documentId} noteId={op.id} />}
-                            {(mine || isSteward()) && (
-                                <button class="annotation-thread__hide" type="button" onClick={() => attempt(() => store.hide(op.id))}>Hide</button>
-                            )}
+                            {mayPin && op.access !== "private" && !a.struck && <PinButton documentId={documentId} noteId={op.id} />}
+                            <TakeBack id={op.id} mine={mine} struck={a.struck} />
                         </p>
                         {replying === op.id && (
                             <ReplyForm to={name(a)} onSend={(body, access) => attempt(async () => {

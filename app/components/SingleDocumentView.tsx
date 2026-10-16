@@ -1,4 +1,4 @@
-import { attempt, identity, person, presence, stewards, tell, tokens, useLibrary, useTransport, views, viewer } from "../state";
+import { attempt, identity, isMe, person, presence, stewards, tell, tokens, useLibrary, useTransport, views, viewer } from "../state";
 import { displayName, listPeople, mediumLabel, when } from "../format";
 import { href } from "../route";
 import { DocumentViewer } from "./DocumentViewer";
@@ -73,7 +73,12 @@ export function SingleDocumentView({ id }: { id: string }) {
                     )}
                     {canHide && (
                         <button class="single-document__hide" type="button"
-                            onClick={() => attempt(() => store.hide(id))}>Hide this document</button>
+                            onClick={() => {
+                                if (!confirm(isMe(doc.user)
+                                    ? "Remove this document? It and its file are deleted from the library, and from phones as they connect."
+                                    : "Remove this document for everyone? It and its file are deleted from the library.")) return;
+                                attempt(async () => { await store.redact(id, "remove"); location.hash = href({ view: "gallery" }); });
+                            }}>Remove this document</button>
                     )}
                 </div>
 

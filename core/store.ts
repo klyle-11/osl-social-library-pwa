@@ -28,7 +28,8 @@ export type NodeRole = "library" | "droppoint";
 
 // What a node says to a push. `keep` lists ops it left with the phone (a drop point
 // whose flash is full, or an op too big for the radio): they stay in the outbox.
-export type PushReply = { keep: OpId[], role: NodeRole };
+// `refused`: ops the node won't take, and why (they stay on this device only).
+export type PushReply = { keep: OpId[], role: NodeRole, refused?: { id: OpId, reason: string }[] };
 
 // How ops move between this device and a node. HTTP now; a bundle file or radio later.
 export interface Transport {
@@ -68,6 +69,8 @@ export class LibraryStore {
     mediaOutbox: string[] = [];
     // handed in at a drop point, not yet seen coming back from the library
     relayed: OpId[] = [];
+    // told when the node won't take something, and why
+    onRefused: ((refused: { id: OpId, reason: string }[]) => void) | null = null;
 
     private seq = 0;
     private listeners = new Set<() => void>();
@@ -284,6 +287,7 @@ export class LibraryStore {
         let sent = 0;
         for (const batch of batches(ops, PUSH_BATCH_BYTES)) {
             const reply = await transport.pushOps(batch);
+            if (reply.refused?.length) this.onRefused?.(reply.refused);
             const keep = new Set(reply.keep);
             const taken = batch.map(o => o.id).filter(id => !keep.has(id));
             sent += taken.length;

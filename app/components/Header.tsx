@@ -1,4 +1,4 @@
-import { directory, locked, medium, nodeRole, pending, presence, query, syncState, views, viewer } from "../state";
+import { canModerate, directory, locked, medium, nodeRole, pending, presence, query, syncState, views, viewer } from "../state";
 import { libraryId } from "../library";
 import { MEDIUMS, displayName } from "../format";
 import { href, route, type Route } from "../route";
@@ -10,7 +10,8 @@ const SYNC_TEXT = {
     synced: "Up to date",
     offline: "Offline",
     paused: "Sync paused",
-    locked: "Protected"
+    locked: "Protected",
+    banned: "Not allowed here"
 };
 
 const LINKS: [Route["view"], string][] = [
@@ -73,7 +74,8 @@ export function Header() {
             </form>}
 
             <nav class="header__nav" aria-label="Main">
-                {[...LINKS, ...(admin ? [["manage", "Manage"] as [Route["view"], string]] : [])].map(([view, label]) => (
+                {[...LINKS, ...(canModerate.value ? [["moderate", "Moderate"] as [Route["view"], string]] : []),
+                    ...(admin ? [["manage", "Manage"] as [Route["view"], string]] : [])].map(([view, label]) => (
                     <a class={`header__link${current === view ? " header__link--active" : ""}`} key={view}
                         href={href({ view } as Route)} aria-current={current === view ? "page" : undefined}>{label}</a>
                 ))}

@@ -5,8 +5,8 @@ import { carry } from "../adapters/carry";
 import { fileUrl } from "./format";
 import { thumbnailUrl } from "./components/Thumbnail";
 import { href, route } from "./route";
-import { follow, lastSync, locked, nodeRole, paused, pending, presence, relayed, syncState, views } from "./state";
-import { LockedError } from "../adapters/http-transport";
+import { banned, follow, lastSync, locked, nodeRole, paused, pending, presence, relayed, syncState, views } from "./state";
+import { BannedError, LockedError } from "../adapters/http-transport";
 
 declare const OSL_PDFJS: string;
 
@@ -56,8 +56,12 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
             lastSync.value = new Date().toISOString();
             failures = 0;
             locked.value = false;
+            banned.value = null;
         } catch (e) {
-            if (e instanceof LockedError) {
+            if (e instanceof BannedError) {
+                syncState.value = "banned";
+                banned.value = e.banned;
+            } else if (e instanceof LockedError) {
                 // the node wants this library's password: nothing to retry until someone gives it
                 syncState.value = "locked";
                 locked.value = true;

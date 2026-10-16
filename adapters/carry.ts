@@ -37,6 +37,13 @@ export async function carry(urls: string[]): Promise<string[]> {
     return failed;
 }
 
+// files of documents taken back at the library: off the phone too
+export async function forget(urls: string[]): Promise<void> {
+    if (!canCarry() || !urls.length) return;
+    const cache = await caches.open(CACHE);
+    for (const url of urls) await cache.delete(url);
+}
+
 // ask the browser not to evict our storage (installed PWAs usually get this)
 export async function persistStorage(): Promise<boolean> {
     try {

@@ -57,6 +57,15 @@ Design: [docs/libraries-and-accounts.md](docs/libraries-and-accounts.md). Rehear
 - [ ] Signed ops, so the radio can't be used to write as an account (W-D12, "Known gap").
 - [ ] On real phones: sign in on two phones, Keep on one, see it on the other; a protected library's lock screen on Safari.
 
+## Moderation (docs/moderation.md)
+
+- [x] Moderate page: activity newest first, strike out, remove, ban (device, address, account) with a message and the admin's contact.
+- [x] People delete their own notes and uploads; erased at the library and on phones; removed files deleted and can't come back.
+- [x] Takedown page with DMCA information and a request form; requests on Moderate.
+- [ ] Write the admin's contact on Moderate → Contact before the workshop.
+- [ ] Decide whether to register a DMCA designated agent (US) for wherever the library is reachable from.
+- [ ] Drop points: erase taken-back words from their flash too (they keep the original until reset).
+
 ## Blocked on the domain (Gate three)
 
 - [ ] Rent the domain.

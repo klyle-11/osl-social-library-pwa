@@ -48,10 +48,12 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Who may add documents, any combination (anyone, signed in, members, uploaders, digitizers, presenters); enforced at the library | Rehearsed |
 | A watch folder per library: files put in it on the node become documents | Tried with `curl` and a scratch folder |
 | Collections: who may see (everyone, only me, people and groups) and who may add; private ones never leave the library for anyone else | Rehearsed |
+| Moderation: everything newest first with device and address; strike out (stays, words ***) or remove, erased from the library's log and from phones; removed uploads' files deleted; bans by device, address or account with a message and the admin's contact; people delete their own things; a Takedown page with DMCA information and a request form ([docs/moderation.md](docs/moderation.md)) | Rehearsed (`npm run rehearse:people`) |
+| Each person's Kept is private to them and the library's admins until they share it | Rehearsed |
 | Drop points carry other libraries the node admin chooses, protected ones too: the password is asked at the drop point, checked against the PBKDF2 hash the library sends by radio | Rehearsed (`npm run rehearse:radio`); not yet on a board |
 | Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
 
-Checked with 89 unit tests (core and node), the firmware's tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (31 checks, with a protected library at the drop point) and `npm run rehearse:people` (27 checks: libraries, passwords, accounts, roles, private and shared collections). It has **not** been run on a real phone or on the Pi yet.
+Checked with 98 unit tests (core and node), the firmware's tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (31 checks, with a protected library at the drop point) and `npm run rehearse:people` (36 checks: libraries, passwords, accounts, roles, private and shared collections, moderation, bans, takedowns). It has **not** been run on a real phone or on the Pi yet.
 
 ## Run it
 

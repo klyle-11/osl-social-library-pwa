@@ -1,6 +1,6 @@
 import type { LibraryStore } from "../../core/store";
 import { useEffect } from "preact/hooks";
-import { LibraryContext, locked, missing, nodeRole, notice, signedOut, syncState, useTransport } from "../state";
+import { LibraryContext, banned, locked, missing, nodeRole, notice, signedOut, syncState, useTransport } from "../state";
 import { route } from "../route";
 import { Header } from "./Header";
 import { NowShowing } from "./NowShowing";
@@ -20,6 +20,9 @@ import { LockScreen } from "./LockScreen";
 import { Account } from "./Account";
 import { Libraries } from "./Libraries";
 import { Manage } from "./Manage";
+import { Moderate } from "./Moderate";
+import { Takedown } from "./Takedown";
+import { BannedScreen } from "./BannedScreen";
 import { href } from "../route";
 import { queue } from "../player";
 
@@ -32,7 +35,7 @@ export function Library({ store }: { store: LibraryStore }) {
     useEffect(() => { if (atLibrary) void sendWaitingSuggestions(s => transport.suggest(s)); }, [atLibrary]);
     // a protected library shows nothing of itself until it's open; signing in and the
     // other libraries are still there
-    const shut = (locked.value || missing.value) && r.view !== "account" && r.view !== "libraries" && r.view !== "you" && r.view !== "suggest";
+    const shut = (locked.value || missing.value || !!banned.value) && r.view !== "takedown" && r.view !== "account" && r.view !== "libraries" && r.view !== "you" && r.view !== "suggest";
     // the big screen is its own layout: no header, nothing to tap by accident
     if (r.view === "present" && !shut) {
         return <LibraryContext.Provider value={store}><Present /></LibraryContext.Provider>;
@@ -59,7 +62,7 @@ export function Library({ store }: { store: LibraryStore }) {
                 )}
                 {!shut && <NowShowing />}
                 <main class="library__main">
-                    {shut ? (missing.value ? <Libraries /> : <LockScreen />) : <>
+                    {shut ? (banned.value ? <BannedScreen /> : missing.value ? <Libraries /> : <LockScreen />) : <>
                     {r.view === "gallery" && <Gallery />}
                     {r.view === "activity" && <Feed />}
                     {r.view === "collections" && <Collections />}
@@ -72,10 +75,16 @@ export function Library({ store }: { store: LibraryStore }) {
                     {r.view === "suggest" && <Suggest />}
                     {r.view === "suggestions" && <Suggestions />}
                     {r.view === "manage" && <Manage />}
+                    {r.view === "moderate" && <Moderate />}
                     </>}
+                    {r.view === "takedown" && <Takedown />}
                     {r.view === "account" && <Account />}
                     {r.view === "libraries" && <Libraries />}
                 </main>
+                <footer class="library__foot">
+                    <a href={href({ view: "takedown" })}>Taking something down</a>
+                    <a href={href({ view: "suggest" })}>Suggest</a>
+                </footer>
                 <AudioBar />
             </div>
         </LibraryContext.Provider>

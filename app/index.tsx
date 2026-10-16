@@ -9,6 +9,9 @@ import { newDeviceId, now, recall } from "../adapters/device";
 import { persistStorage } from "../adapters/carry";
 import { effect } from "@preact/signals";
 import { TransportContext, catalogStewards, opLog, pending, tell, tokens, viewer } from "./state";
+import { forget } from "../adapters/carry";
+import { fileUrl } from "./format";
+import { thumbnailUrl } from "./components/Thumbnail";
 import { startCarrying, startSync } from "./sync";
 import { startTheme } from "./theme";
 import { startPlayer } from "./player";
@@ -53,6 +56,25 @@ async function boot() {
     opLog.value = store.ops;
     pending.value = store.outbox.length;
     store.subscribe(() => { opLog.value = store.ops; viewer.value = store.user; });
+
+    // What its author or a steward took back is erased here too: the words from this
+    // device's copy, and a removed upload's files from its storage.
+    const erased = new Set<string>();
+    effect(() => {
+        const ids = Object.keys(views.value.redactions).filter(id => !erased.has(id));
+        if (!ids.length) return;
+        for (const id of ids) erased.add(id);
+        const before = new Map(store.ops.map(o => [o.id, o]));
+        const files = ids.map(id => before.get(id)).flatMap(o => o?.type === "document" ? [fileUrl(o), thumbnailUrl(o)] : [])
+            .filter((u): u is string => !!u);
+        void forget(files);
+        void store.purge(ids);
+    });
+    // the node won't take something: say so, and why
+    store.onRefused = refused => {
+        const reasons = [...new Set(refused.map(r => r.reason))];
+        tell(`The library didn't take ${refused.length === 1 ? "that" : `${refused.length} of those`}: ${reasons.join(" ")}`, true);
+    };
 
     // Preact renders beside what's already in the container, so the "Opening the library…"
     // placeholder from index.html goes first

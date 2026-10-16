@@ -4,7 +4,7 @@ import { computed, signal } from "@preact/signals";
 import { buildViews } from "../core/views";
 import type { LibraryStore, NodeRole } from "../core/store";
 import type { Identity, Op, Presence } from "../core/types";
-import type { Directory, HttpTransport, Role } from "../adapters/http-transport";
+import type { Banned, Directory, HttpTransport, Role } from "../adapters/http-transport";
 
 // Context says WHICH store/adapters this shell uses; signals say WHAT changed.
 export const LibraryContext = createContext<LibraryStore>(null!);
@@ -38,6 +38,11 @@ export function isSteward(): boolean {
     return stewards.value.includes(viewer.value) || stewards.value.includes(person.value);
 }
 
+// the library's admins banned this device, address or account: what they said
+export const banned = signal<Banned | null>(null);
+// the library's stewards (and admins) moderate: the Moderate page
+export const canModerate = computed(() => !!directory.value?.library.roles?.includes("steward"));
+
 // the node has no library by this page's name (deleted, or a mistyped address)
 export const missing = signal(false);
 
@@ -56,7 +61,7 @@ export const views = computed(() =>
         accounts: directory.value?.accounts ?? {}, admin: !!directory.value?.library.roles?.includes("admin")
     }));
 
-export type SyncState = "starting" | "no-node" | "syncing" | "synced" | "offline" | "paused" | "locked";
+export type SyncState = "starting" | "no-node" | "syncing" | "synced" | "offline" | "paused" | "locked" | "banned";
 export const syncState = signal<SyncState>("starting");
 export const lastSync = signal<string | null>(null);
 export const paused = signal(false);

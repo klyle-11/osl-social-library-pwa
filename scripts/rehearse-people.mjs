@@ -192,6 +192,59 @@ report('a guest\'s name shows as "Kofi (Guest)"', seen && thread.includes('Kofi 
 const by = await phone.evaluate(() => document.body.textContent);
 report('an account\'s name shows without it', by.includes('Ama Owusu') && !by.includes('Ama Owusu (Guest)'));
 
+// ---- moderation: taking back, striking out, banning, takedown requests ----
+const LOG = join(ROOT, 'data', 'ops.jsonl');
+const onDisk = text => existsSync(LOG) && readFileSync(LOG, 'utf8').includes(text);
+await guest.fill('.annotation-form__body', 'Mine to delete');
+await guest.click('.annotation-form__submit');
+await within(10000, () => onDisk('Mine to delete'));
+await guest.locator('.annotation-thread__item', { hasText: 'Mine to delete' }).locator('.take-back').click();
+report('a guest deletes their own note: gone from the library\'s log on disk', await within(10000, () => !onDisk('Mine to delete')));
+report('…and from everyone else\'s screen', await within(10000, async () => !(await laptop.textContent('.single-document__conversation')).includes('Mine to delete')));
+
+await laptop.goto(BASE + '/?library=main#/moderate');
+await laptop.waitForSelector('.moderate__entry');
+await laptop.click('.moderate__tab >> text=Contact');
+await laptop.fill('.moderate__panel textarea', 'Ama at the front desk, ama@example.org');
+await laptop.click('.moderate__save');
+await laptop.waitForSelector('text=Saved.');
+await laptop.click('.moderate__tab >> text=Activity');
+const entry = laptop.locator('.moderate__entry', { hasText: 'From a guest' });
+await entry.waitFor();
+report('the dashboard lists everything newest first, with who, the device and the address',
+    (await entry.textContent()).includes('Kofi (Guest)') && /from .*(127\.0\.0\.1|::1)/.test(await entry.textContent()));
+await entry.locator('text=Strike out').click();
+report('a steward strikes a note out: the words leave the library\'s log', await within(10000, () => !onDisk('From a guest')));
+await phone.goto(BASE + '/?library=main' + first);
+report('…and everyone sees ***, still with who wrote it', await within(15000, async () => {
+    const t = await phone.textContent('.notes-dock, .single-document__conversation');
+    return t.includes('***') && !t.includes('From a guest') && t.includes('Kofi (Guest)');
+}));
+
+await laptop.goto(BASE + '/?library=main#/moderate');
+await laptop.click('text=Refresh');
+const again = laptop.locator('.moderate__entry', { hasText: 'Kofi (Guest)' }).first();
+await again.locator('text=Ban…').click();
+await laptop.fill('.moderate__ban textarea', 'Please take a break from posting.');
+await laptop.click('.moderate__ban button[type=submit]');
+await laptop.waitForSelector('text=Banned.');
+await guest.goto(BASE + '/?library=main#/');
+report('the banned guest sees the message and the admin\'s contact, not the library', await within(15000, async () => {
+    const t = await guest.textContent('body');
+    return t.includes('Please take a break from posting.') && t.includes('ama@example.org') && !(await guest.isVisible('.gallery'));
+}));
+await guest.goto(BASE + '/?library=main#/takedown');
+await guest.selectOption('.takedown__form select', 'privacy');
+await guest.fill('.takedown__form input[autocomplete="name"]', 'Kofi');
+await guest.fill('.takedown__form >> nth=0 >> input >> nth=1', 'kofi@example.org');
+await guest.fill('.takedown__form textarea >> nth=0', 'A photo of me');
+await guest.fill('.takedown__form textarea >> nth=1', 'The photo called Corner store');
+await guest.click('.takedown__send');
+report('the Takedown page works, even for a banned device', await within(10000, () => guest.isVisible('.takedown__sent')));
+await laptop.click('.moderate__tab >> text=Requests');
+report('…and the request reaches the admins', await within(10000, async () => (await laptop.textContent('.moderate')).includes('The photo called Corner store')));
+report('the moderation and takedown pages fit a phone', await (async () => { await phone.goto(BASE + '/?library=main#/takedown'); await phone.waitForSelector('.takedown'); return fitsWidth(phone); })());
+
 // ---- signing out: the next person on the device isn't you ----
 await phone.goto(BASE + '/?library=main#/you');
 const before = await phone.textContent('.you__details code');

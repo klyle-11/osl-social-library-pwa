@@ -956,3 +956,63 @@ button.prompt-strips__strip:hover:not(:disabled) { background: var(--paper); col
 
 .add-document__closed { padding: 0.9rem 1rem; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: var(--radius); }
 .you__account { padding: 0.75rem 0; }
+
+/* ---------- moderation, bans, takedowns ---------- */
+
+.moderate, .takedown { max-width: 52rem; margin: 0 auto; }
+.moderate__title, .takedown__title { font-size: 1.75rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--rule); }
+.moderate__tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
+.moderate__tab { border: 0; border-radius: 0; background: none; font-weight: 600; }
+.moderate__tab--on { box-shadow: inset 0 -2px 0 var(--accent); }
+.moderate__panel { display: grid; gap: 0.75rem; }
+.moderate__bar { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; }
+.moderate__find { flex: 1 1 16rem; font-size: 0.875rem; }
+.moderate__text { color: var(--muted); }
+.moderate__list { display: grid; border-top: 1px solid var(--line); }
+.moderate__entry { display: grid; gap: 0.25rem; padding: 0.75rem 0; border-bottom: 1px solid var(--line); }
+.moderate__entry--remove { opacity: 0.6; }
+.moderate__who { font-size: 0.9375rem; }
+.moderate__said { padding-left: 0.75rem; border-left: 2px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.moderate__said--struck { text-decoration: line-through; color: var(--muted); }
+.moderate__meta { font-size: 0.8125rem; color: var(--muted); }
+.moderate__label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.moderate__actions, .moderate__row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.moderate__act { min-height: 2.25rem; padding: 0.25rem 0.75rem; font-size: 0.875rem; }
+.moderate__more { justify-self: center; margin-top: 1rem; }
+.moderate__ban { display: grid; gap: 0.5rem; padding: 1rem; border: 1px solid var(--warn); border-radius: var(--radius); }
+.moderate__heading { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.moderate__check { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.35rem 0; }
+.moderate__inline { display: inline-block; width: auto !important; min-height: 2rem !important; padding: 0.15rem 0.4rem !important; font-family: monospace; font-size: 0.875rem; }
+.moderate__field { font-size: 0.9375rem; }
+.moderate__danger { justify-self: start; border-color: var(--warn); background: var(--warn); color: var(--on-primary); font-weight: 600; }
+.moderate__save { justify-self: start; background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+.moderate__quiet { justify-self: start; }
+
+.takedown__text { margin: 0.5rem 0; }
+.takedown__contact { margin: 0.75rem 0; padding: 0.75rem 1rem; border: 1px solid var(--line); border-left: 3px solid var(--accent); }
+.takedown__label, .banned__contact-label, .banned__label { display: block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.takedown__section, .takedown__form { margin-top: 1.75rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.takedown__heading { margin-bottom: 0.5rem; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.takedown__list { display: grid; gap: 0.4rem; padding-left: 1.2rem; list-style: disc; }
+.takedown__list--numbered { list-style: decimal; }
+.takedown__form { display: grid; gap: 0.75rem; }
+.takedown__field { font-size: 0.9375rem; }
+.takedown__check { display: flex; gap: 0.6rem; align-items: flex-start; }
+.takedown__send { justify-self: start; background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+.takedown__sent { margin-top: 1.5rem; padding: 0.9rem 1rem; border: 1px solid var(--live); border-left-width: 3px; }
+.takedown__section--operators { color: var(--muted); font-size: 0.9375rem; }
+
+.banned { display: grid; gap: 0.75rem; max-width: 34rem; margin: 3rem auto 0; padding: 1.5rem; border: 1px solid var(--warn); border-radius: var(--radius); }
+.banned__label { color: var(--warn); }
+.banned__title { font-size: 1.375rem; line-height: 1.25; }
+.banned__message { margin: 0; padding-left: 0.9rem; border-left: 3px solid var(--warn); font-family: var(--serif); font-size: 1.0625rem; white-space: pre-wrap; }
+
+.take-back { min-height: 2rem; padding: 0.15rem 0.6rem; font-size: 0.8125rem; }
+.annotation-thread__body--struck { letter-spacing: 0.2em; color: var(--muted); text-decoration: line-through; }
+
+.library__foot {
+    display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: center;
+    max-width: var(--page); margin: 2rem auto 0; padding: 1rem 1rem calc(1.5rem + var(--audio-bar, 0px));
+    border-top: 1px solid var(--line); font-size: 0.875rem;
+}
+.library__foot a { color: var(--muted); }
