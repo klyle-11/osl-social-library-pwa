@@ -56,7 +56,17 @@ async function device(browser, name, opts) {
 }
 const noteText = (page) => page.$$eval('.annotation-thread__body', (els) => els.map((e) => e.textContent));
 const hasNote = async (page, text) => (await noteText(page)).includes(text);
-async function post(page, text) { await page.fill('.annotation-form__body', text); await page.click('.annotation-form__submit'); }
+// on a phone the notes dock along the bottom is where a note is written; on a wide screen, the form
+async function post(page, text) {
+  await page.waitForSelector('.annotation-form__body, .notes-dock__input', { state: 'attached' });
+  if (await page.locator('.annotation-form__body').isVisible()) {
+    await page.fill('.annotation-form__body', text);
+    await page.click('.annotation-form__submit');
+  } else {
+    await page.fill('.notes-dock__input', text);
+    await page.click('.notes-dock__send');
+  }
+}
 const go = (page, hash) => page.evaluate((h) => { location.hash = h; }, hash);
 const fitsWidth = (page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 async function pair(page, role) {
@@ -128,7 +138,7 @@ const noToken = await fetch(BASE + 'api/showing', { method: 'POST', body: JSON.s
 report('showing without a token is refused (403)', noToken.status === 403, String(noToken.status));
 
 // 5. offline on the phone: waits, then sends
-await go(A.page, '#/document/steward%3A1'); await A.page.waitForSelector('.annotation-form__body');
+await go(A.page, '#/document/steward%3A1'); await A.page.waitForSelector('.annotation-form__body', { state: 'attached' });
 await A.ctx.setOffline(true);
 await post(A.page, 'Written offline on A');
 await go(A.page, '#/sync'); await A.page.waitForSelector('.sync-screen');
@@ -146,7 +156,7 @@ report('back online: B gets the offline note', t !== null);
 // 6. pause
 await go(B.page, '#/sync'); await B.page.waitForSelector('.sync-screen');
 await B.page.click('.sync-screen__button--quiet');
-await go(B.page, '#/document/steward%3A4'); await B.page.waitForSelector('.annotation-form__body');
+await go(B.page, '#/document/steward%3A4'); await B.page.waitForSelector('.annotation-form__body', { state: 'attached' });
 await post(B.page, 'Paused note 1'); await B.page.waitForTimeout(200); await post(B.page, 'Paused note 2');
 await go(B.page, '#/sync'); await B.page.waitForSelector('.sync-screen');
 await B.page.waitForTimeout(3000);
@@ -158,7 +168,7 @@ report('resumed: the paused notes reach the node', t !== null, t !== null ? `${t
 
 // 7. the node stops for a while, notes are written meanwhile, then it comes back
 await stopNode();
-await go(A.page, '#/document/steward%3A1'); await A.page.waitForSelector('.annotation-form__body');
+await go(A.page, '#/document/steward%3A1'); await A.page.waitForSelector('.annotation-form__body', { state: 'attached' });
 await post(A.page, 'Written while the node was down');
 await A.page.waitForTimeout(20000);
 const headerDown = await A.page.textContent('.header');
@@ -226,7 +236,7 @@ appendFileSync(LOG, '{"id":"cut:1","type":"annot');
 const up = await startNode();
 report('power cut: the node still starts with a cut-off last line', up, up ? '' : node.out.split('\n').find((l) => /Error/.test(l)));
 if (up) {
-  await go(A.page, '#/document/steward%3A1'); await A.page.waitForSelector('.annotation-form__body');
+  await go(A.page, '#/document/steward%3A1'); await A.page.waitForSelector('.annotation-form__body', { state: 'attached' });
   await post(A.page, 'After the power cut');
   await within(10000, async () => readFileSync(LOG, 'utf8').includes('After the power cut'));
   await stopNode(); const again = await startNode();

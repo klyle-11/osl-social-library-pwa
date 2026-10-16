@@ -80,10 +80,16 @@ async function phone(name, device) {
 }
 const go = (p, hash) => p.page.evaluate((h) => { location.hash = h; }, hash);
 const notes = (p) => p.page.$$eval('.annotation-thread__body', (els) => els.map((e) => e.textContent));
+// on a phone the notes dock along the bottom is where a note is written; on a wide screen, the form
 async function post(p, text) {
-  await p.page.waitForSelector('.annotation-form__body');
-  await p.page.fill('.annotation-form__body', text);
-  await p.page.click('.annotation-form__submit');
+  await p.page.waitForSelector('.annotation-form__body, .notes-dock__input', { state: 'attached' });
+  if (await p.page.locator('.annotation-form__body').isVisible()) {
+    await p.page.fill('.annotation-form__body', text);
+    await p.page.click('.annotation-form__submit');
+  } else {
+    await p.page.fill('.notes-dock__input', text);
+    await p.page.click('.notes-dock__send');
+  }
 }
 const headerSays = (p) => p.page.textContent('.header__sync');
 
