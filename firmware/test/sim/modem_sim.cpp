@@ -10,107 +10,26 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include <deque>
 #include <string>
 
-#include "../../lib/osl_node/src/osl_status.h"
+#include "../../lib/osl_modem/src/osl_modem.h"
 #include "sim_radio.h"
 
-static constexpr uint8_t KIND_OP = 1;  // as lora_io.h
-
 static int pty = -1;
-static osl::Link* radioLink;
 static SimRadio* radioIO;
+static osl::ModemRelay* relay;
 
-struct Outgoing {
-    std::string id, msg;
-};
-static std::deque<Outgoing> queue;
-static uint32_t inflightMsg = 0;
-static std::string inflightId;
-
-static void out(const std::string& line) {
+static void out(void*, const std::string& line) {
     std::string l = line + "\n";
     if (write(pty, l.data(), l.size()) < 0) { /* nobody listening yet: as a board with no Pi */ }
 }
 
-static void logLine(const char* msg) {
-    JsonDocument d;
-    d["t"] = "log";
-    d["msg"] = msg;
-    std::string s;
-    serializeJson(d, s);
-    out(s);
-}
-
 static void hello() {
-    out("{\"t\":\"hello\",\"role\":\"modem\",\"radio\":true,\"sim\":true}");
+    out(nullptr, "{\"t\":\"hello\",\"role\":\"modem\",\"radio\":true,\"sim\":true}");
 }
 
-static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
-    if (len >= 2 && data[0] == osl::KIND_STATUS) {  // as the modem: passed up with its signal, durable at once
-        JsonDocument check;
-        if (!deserializeJson(check, (const char*)data + 1, len - 1) && check.is<JsonObject>()) {
-            char head[96];
-            snprintf(head, sizeof head, "{\"t\":\"status\",\"rssi\":%.1f,\"snr\":%.1f,\"status\":", radioIO->rssi, radioIO->snr);
-            out(head + std::string((const char*)data + 1, len - 1) + "}");
-        }
-        radioLink->markDurable(msgId);
-        return;
-    }
-    if (len < 2 || data[0] != KIND_OP) {
-        logLine("dropped a radio message of an unknown kind");
-        radioLink->markDurable(msgId);
-        return;
-    }
-    JsonDocument check;
-    if (deserializeJson(check, (const char*)data + 1, len - 1) || !check.is<JsonObject>()) {
-        logLine("dropped a message that is not a JSON op");
-        radioLink->markDurable(msgId);
-        return;
-    }
-    out("{\"t\":\"recv\",\"m\":" + std::to_string(msgId) + ",\"op\":" + std::string((const char*)data + 1, len - 1) + "}");
-}
-
-static void onRemoteDurable(void*, uint32_t msgId) {
-    if (msgId != inflightMsg) return;
-    JsonDocument d;
-    d["t"] = "sent";
-    d["id"] = inflightId;
-    std::string s;
-    serializeJson(d, s);
-    out(s);
-    inflightMsg = 0;
-    inflightId.clear();
-}
-
-static void handleLine(const std::string& l) {
-    JsonDocument d;
-    if (deserializeJson(d, l)) return logLine("bad line from Pi");
-    const char* t = d["t"] | "";
-    if (!strcmp(t, "send")) {
-        const char* id = d["id"] | "";
-        if (!*id || !d["op"].is<JsonObject>()) return logLine("send needs id and op");
-        if (inflightId == id) return;
-        for (auto& o : queue)
-            if (o.id == id) return;
-        if (queue.size() >= 8) return logLine("queue full");
-        Outgoing o;
-        o.id = id;
-        // ArduinoJson 7's serializeJson replaces a string's contents rather than appending,
-        // so the op goes into its own string first; the kind byte must stay in front.
-        std::string json;
-        serializeJson(d["op"], json);
-        o.msg.push_back((char)KIND_OP);
-        o.msg += json;
-        if (o.msg.size() > osl::MAX_MESSAGE) return logLine("op too large for the radio link");
-        queue.push_back(o);
-    } else if (!strcmp(t, "durable")) {
-        radioLink->markDurable(d["m"].as<uint32_t>());
-    } else if (!strcmp(t, "ping")) {
-        hello();
-    }
-}
+static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) { relay->deliver(msgId, data, len, radioIO->rssi, radioIO->snr); }
+static void onRemoteDurable(void*, uint32_t msgId) { relay->remoteDurable(msgId); }
 
 int main(int argc, char** argv) {
     if (argc < 3) {
@@ -119,8 +38,9 @@ int main(int argc, char** argv) {
     }
     SimRadio io(atoi(argv[1]), atoi(argv[2]), argc > 3 ? atof(argv[3]) : 0);
     osl::Link link(io, simTimings());
-    radioLink = &link;
     radioIO = &io;
+    osl::ModemRelay r(link, out, nullptr);
+    relay = &r;
     link.onDeliver(onDeliver, nullptr);
     link.onRemoteDurable(onRemoteDurable, nullptr);
 
@@ -149,7 +69,7 @@ int main(int argc, char** argv) {
             ssize_t n = read(pty, buf, sizeof buf);
             for (ssize_t i = 0; i < n; i++) {
                 if (buf[i] == '\n') {
-                    if (!line.empty()) handleLine(line);
+                    if (!line.empty() && relay->line(line)) hello();
                     line.clear();
                 } else if (buf[i] != '\r' && line.size() < 12000) {
                     line.push_back(buf[i]);
@@ -158,11 +78,6 @@ int main(int argc, char** argv) {
         }
         io.poll(link);
         link.tick();
-        if (!link.busy() && !inflightMsg && !queue.empty()) {
-            Outgoing& o = queue.front();
-            inflightMsg = link.send((const uint8_t*)o.msg.data(), o.msg.size());
-            if (inflightMsg) inflightId = o.id;
-            queue.pop_front();
-        }
+        relay->pump();
     }
 }

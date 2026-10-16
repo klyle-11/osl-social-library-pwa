@@ -9,13 +9,14 @@ export type Group = { id: string, name: string, members: string[] };
 export type Me = { id: string, username: string, name: string, admin: boolean };
 export type Directory = {
     revision: number,
+    droppoint?: boolean,   // answered by a drop point: it knows which libraries it carries, and nobody's account
     libraries: { id: string, name: string, protected: boolean, open: boolean }[],
     me: Me | null,
     signup: boolean,
     setup: boolean,     // no accounts yet: the first needs the pairing code, and looks after the node
     library: {
         id: string, name: string, protected: boolean, locked: boolean,
-        upload?: Uploader[], mayUpload?: boolean, roles?: LibraryRole[], watch?: { folder: string } | null
+        upload?: Uploader[], mayUpload?: boolean, roles?: LibraryRole[], watch?: { folder: string } | null, droppoints?: boolean
     },
     accounts?: Record<string, string>,      // account id -> name
     devices?: Record<string, string>,       // device id -> account id
@@ -111,7 +112,11 @@ export class HttpTransport implements Transport {
         }
         if (this.access) query.set("access", this.access);
         const res = await fetch(this.url("ops", query), { cache: "no-store" });
-        if (res.status === 401) throw new LockedError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "This library is protected.");
+        if (res.status === 401) {
+            const body = await res.json().catch(() => ({})) as { error?: string, node?: { role?: unknown } };
+            this.role = body.node?.role === "droppoint" ? "droppoint" : "library";
+            throw new LockedError(body.error ?? "This library is protected.");
+        }
         if (!res.ok) throw new Error(`pull failed: ${res.status}`);
         const body = await res.json() as { ops?: unknown[], cursor?: string, presence?: unknown, node?: { role?: unknown }, directory?: unknown, access?: unknown };
         this.role = body.node?.role === "droppoint" ? "droppoint" : "library";
@@ -218,7 +223,7 @@ export class HttpTransport implements Transport {
         return ((await this.send("libraries/create", fields)) as { id: string }).id;
     }
     // each answers with this library's directory as it now stands
-    async librarySettings(changes: { name?: string, password?: string | null, upload?: Uploader[], watch?: string | null }): Promise<Directory> {
+    async librarySettings(changes: { name?: string, password?: string | null, upload?: Uploader[], watch?: string | null, droppoints?: boolean }): Promise<Directory> {
         return await this.send("libraries/settings", changes, true) as Directory;
     }
     async setRoles(account: string, roles: LibraryRole[]): Promise<Directory> {

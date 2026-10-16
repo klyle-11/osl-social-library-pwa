@@ -1,46 +1,32 @@
 // Modem (gate seven, step A): the ESP32-S3 plugged into the Pi by USB.
 // It only frames, sends, receives and hands over. All storage and every
-// decision stay on the Pi (server.js + radio-bridge.js).
+// decision stay on the Pi (node/server.ts and node/radio.ts).
 //
-// USB serial protocol, one JSON object per line, 115200 baud:
-//   Pi -> modem   {"t":"send","id":"<op id>","op":{...}}   send an op to the drop point
-//                 {"t":"durable","m":<msg>}                  the Pi has stored message <msg>
-//                 {"t":"ping"}
-//   modem -> Pi   {"t":"recv","m":<msg>,"op":{...}}         an op arrived; reply "durable" once stored
-//                 {"t":"sent","id":"<op id>"}                the drop point has stored it durably
-//                 {"t":"hello", ...}                         status, every 30 s and on ping
-//                 {"t":"log","msg":"..."}
+// USB serial protocol, one JSON object per line, 115200 baud: lib/osl_modem/src/osl_modem.h,
+// and {"t":"hello", ...} from here, every 30 s and on ping.
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-#include <deque>
 #include <string>
 
 #include "config.h"
 #include "lora_io.h"
 #include "osl_link.h"
+#include "osl_modem.h"
 
 static LoRaIO io;
 static osl::Link radioLink(io);  // not "link": that name is taken by POSIX link()
-
-struct Outgoing {
-    std::string id;
-    std::string msg;  // KIND_OP + op json
-};
-static std::deque<Outgoing> queue;
-static uint32_t inflightMsg = 0;
-static std::string inflightId;
 static std::string line;
 static bool radioOk = false;
 
-static void logLine(const char* msg) {
-    JsonDocument d;
-    d["t"] = "log";
-    d["msg"] = msg;
-    serializeJson(d, Serial);
+static void toPi(void*, const std::string& l) {
+    Serial.write((const uint8_t*)l.data(), l.size());
     Serial.println();
 }
+
+// lines from the Pi become radio messages and back (lib/osl_modem: tested in the rehearsal)
+static osl::ModemRelay relay(radioLink, toPi, nullptr);
 
 static void hello() {
     const osl::LinkStats& s = radioLink.stats();
@@ -51,7 +37,7 @@ static void hello() {
     d["radioError"] = io.lastError();
     d["rssi"] = io.lastRssi();
     d["snr"] = io.lastSnr();
-    d["queued"] = queue.size() + (inflightMsg ? 1 : 0);
+    d["queued"] = relay.queued();
     JsonObject st = d["stats"].to<JsonObject>();
     st["framesSent"] = s.framesSent;
     st["framesReceived"] = s.framesReceived;
@@ -65,81 +51,10 @@ static void hello() {
 }
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
-    if (len >= 2 && data[0] == KIND_STATUS) {
-        // A drop point's heartbeat: handed to the Pi with how this board heard it.
-        // Nothing to keep, so it is durable at once.
-        JsonDocument check;
-        if (!deserializeJson(check, (const char*)data + 1, len - 1) && check.is<JsonObject>()) {
-            Serial.print("{\"t\":\"status\",\"rssi\":");
-            Serial.print(io.lastRssi(), 1);
-            Serial.print(",\"snr\":");
-            Serial.print(io.lastSnr(), 1);
-            Serial.print(",\"status\":");
-            Serial.write(data + 1, len - 1);
-            Serial.println("}");
-        }
-        radioLink.markDurable(msgId);
-        return;
-    }
-    if (len < 2 || data[0] != KIND_OP) {
-        logLine("dropped a radio message of an unknown kind");
-        radioLink.markDurable(msgId);  // unknown kind: nothing to keep
-        return;
-    }
-    JsonDocument check;
-    if (deserializeJson(check, (const char*)data + 1, len - 1) || !check.is<JsonObject>()) {
-        logLine("dropped a message that is not a JSON op");
-        radioLink.markDurable(msgId);
-        return;
-    }
-    // Embed the op exactly as received.
-    Serial.print("{\"t\":\"recv\",\"m\":");
-    Serial.print(msgId);
-    Serial.print(",\"op\":");
-    Serial.write(data + 1, len - 1);
-    Serial.println("}");
-    // Durable comes later, when the Pi says so. If the Pi is not listening the
-    // drop point keeps polling and the message is delivered again.
+    relay.deliver(msgId, data, len, io.lastRssi(), io.lastSnr());
 }
 
-static void onRemoteDurable(void*, uint32_t msgId) {
-    if (msgId != inflightMsg) return;
-    JsonDocument d;
-    d["t"] = "sent";
-    d["id"] = inflightId;
-    serializeJson(d, Serial);
-    Serial.println();
-    inflightMsg = 0;
-    inflightId.clear();
-}
-
-static void handleLine(const std::string& l) {
-    JsonDocument d;
-    if (deserializeJson(d, l)) return logLine("bad line from Pi");
-    const char* t = d["t"] | "";
-    if (!strcmp(t, "send")) {
-        const char* id = d["id"] | "";
-        if (!*id || !d["op"].is<JsonObject>()) return logLine("send needs id and op");
-        if (inflightId == id) return;  // Pi re-sent while we are still working on it
-        for (auto& o : queue)
-            if (o.id == id) return;
-        if (queue.size() >= 8) return logLine("queue full");
-        Outgoing o;
-        o.id = id;
-        // ArduinoJson 7's serializeJson replaces a string's contents rather than appending,
-        // so the op goes into its own string first; the kind byte must stay in front.
-        std::string json;
-        serializeJson(d["op"], json);
-        o.msg.push_back((char)KIND_OP);
-        o.msg += json;
-        if (o.msg.size() > osl::MAX_MESSAGE) return logLine("op too large for the radio link");
-        queue.push_back(o);
-    } else if (!strcmp(t, "durable")) {
-        radioLink.markDurable(d["m"].as<uint32_t>());
-    } else if (!strcmp(t, "ping")) {
-        hello();
-    }
-}
+static void onRemoteDurable(void*, uint32_t msgId) { relay.remoteDurable(msgId); }
 
 void setup() {
     Serial.setRxBufferSize(16384);
@@ -147,7 +62,7 @@ void setup() {
     radioOk = io.begin();
     radioLink.onDeliver(onDeliver, nullptr);
     radioLink.onRemoteDurable(onRemoteDurable, nullptr);
-    if (!radioOk) logLine("radio init failed: check pins in config.h");
+    if (!radioOk) toPi(nullptr, "{\"t\":\"log\",\"msg\":\"radio init failed: check pins in config.h\"}");
     hello();
 }
 
@@ -155,7 +70,7 @@ void loop() {
     while (Serial.available()) {
         char c = Serial.read();
         if (c == '\n') {
-            if (!line.empty()) handleLine(line);
+            if (!line.empty() && relay.line(line)) hello();
             line.clear();
         } else if (c != '\r' && line.size() < 12000) {
             line.push_back(c);
@@ -164,13 +79,7 @@ void loop() {
 
     io.poll(radioLink);
     radioLink.tick();
-
-    if (!radioLink.busy() && !inflightMsg && !queue.empty()) {
-        Outgoing& o = queue.front();
-        inflightMsg = radioLink.send((const uint8_t*)o.msg.data(), o.msg.size());
-        if (inflightMsg) inflightId = o.id;
-        queue.pop_front();
-    }
+    relay.pump();
 
     static uint32_t lastHello = 0;
     if (millis() - lastHello > 30000) {

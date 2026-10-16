@@ -35,6 +35,7 @@ export class Libraries {
             lib.roles ??= {};
             lib.groups ??= [];
             lib.watch ??= null;
+            lib.droppoints ??= false;
         }
         this.save();
         for (const lib of this.data.libraries) this.open(lib.id);
@@ -82,10 +83,11 @@ export class Libraries {
         return null;
     }
 
-    update(lib: LibraryConfig, changes: { name?: string, upload?: Uploader[], watch?: { folder: string } | null }) {
+    update(lib: LibraryConfig, changes: { name?: string, upload?: Uploader[], watch?: { folder: string } | null, droppoints?: boolean }) {
         if (changes.name !== undefined) lib.name = changes.name.trim().slice(0, 80) || lib.id;
         if (changes.upload !== undefined) lib.upload = changes.upload;
         if (changes.watch !== undefined) lib.watch = changes.watch;
+        if (changes.droppoints !== undefined) lib.droppoints = changes.droppoints;
         this.save();
     }
 
@@ -119,6 +121,6 @@ export class Libraries {
 function blank(id: string, name: string): LibraryConfig {
     return {
         id, name, created: new Date().toISOString(), password: null, passwordSet: null,
-        upload: ["guests"], watch: null, roles: {}, groups: []
+        upload: ["guests"], watch: null, droppoints: false, roles: {}, groups: []
     };
 }

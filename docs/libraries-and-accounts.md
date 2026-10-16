@@ -78,7 +78,9 @@ Restricted collections do not go out by radio; they are at the library.
 
 ## Drop points
 
-Drop points carry protected libraries too. A drop point holds each library it carries separately, and asks for the library's password before handing out its ops (it checks it against the same PBKDF2 hash, sent to it by radio). Accounts stay at the library: at a drop point everyone is a guest, and a protected library opens with its password only.
+Drop points carry protected libraries too. Which libraries go out is the node admin's choice, per library (Manage → Drop points); the main library always does. A drop point holds each library it carries in its own log, and asks for a protected library's password before handing out anything of it: it checks it against the same PBKDF2 hash, which the library sends by radio with the list of libraries (when it changes, and every ten minutes). Accounts stay at the library: at a drop point everyone is a guest, and a protected library opens with its password only, for that browser, until the drop point restarts. A new password closes it there too, once the list arrives.
+
+On the radio, another library's ops carry its id; the main library's are as they always were, so a drop point flashed before still works for the main library. Collections that aren't for everyone don't go out, in any library. Details: `firmware/README.md`, "Radio protocol".
 
 **Risk, accepted:** a drop point's flash holds the libraries' ops and the password hashes in the clear. Anyone who takes the board can read them, and try passwords against the hash at their own pace. A drop point should carry a protected library only if that is acceptable for that library.
 

@@ -11,7 +11,10 @@
 #include <sstream>
 #include <string>
 
+#include "../lib/osl_link/src/osl_kinds.h"
 #include "../lib/osl_node/src/osl_api.h"
+#include "../lib/osl_node/src/osl_crypto.h"
+#include "../lib/osl_node/src/osl_libraries.h"
 #include "../lib/osl_node/src/osl_ops.h"
 #include "../lib/osl_node/src/osl_status.h"
 #include "../lib/osl_node/src/osl_store.h"
@@ -23,10 +26,17 @@ static int failures = 0;
 
 struct StrReply : Reply {
     int status = 0;
-    std::string type, s;
+    std::string type, s, cookie;
+    void header(const char* name, const std::string& value) override { if (!strcmp(name, "Set-Cookie")) cookie = value; }
     void begin(int st, const char* t) override { status = st; type = t; }
     void write(const char* p, size_t n) override { s.append(p, n); }
 };
+
+// tokens for the tests: not random, just different
+static void fakeRandom(uint8_t* out, size_t n) {
+    static uint8_t next = 1;
+    for (size_t i = 0; i < n; i++) out[i] = next++;
+}
 
 static std::string ann(const char* id, const char* body = "hi", const char* access = "public") {
     std::string user(id, strrchr(id, ':') - id);
@@ -36,10 +46,13 @@ static std::string ann(const char* id, const char* body = "hi", const char* acce
 }
 
 // One request through the API, with the reply parsed.
+static std::string lastCookie;   // the Set-Cookie of the last call, if any
+
 static JsonDocument call(Api& api, const char* method, const std::string& pathAndQuery, const std::string& body = "",
-                         int* status = nullptr, uint32_t now = 1000) {
+                         int* status = nullptr, uint32_t now = 1000, const std::string& cookie = "") {
     Request r;
     r.method = method;
+    r.cookie = cookie;
     size_t q = pathAndQuery.find('?');
     r.path = pathAndQuery.substr(0, q);
     if (q != std::string::npos) r.query = pathAndQuery.substr(q + 1);
@@ -47,6 +60,7 @@ static JsonDocument call(Api& api, const char* method, const std::string& pathAn
     r.bodyLen = body.size();
     StrReply out;
     bool handled = api.handle(r, now, out);
+    lastCookie = out.cookie;
     JsonDocument d;
     if (!handled) { d["handled"] = false; return d; }
     if (status) *status = out.status;
@@ -55,6 +69,12 @@ static JsonDocument call(Api& api, const char* method, const std::string& pathAn
     if (e) printf("  not JSON: %s\n", out.s.c_str());
     CHECK(!e);
     return d;
+}
+
+static bool fileExists(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "r");
+    if (f) fclose(f);
+    return f != nullptr;
 }
 
 static std::string newDir() {
@@ -86,13 +106,13 @@ int main() {
     // ---- the API: phones hand in ops; only the library's ops are handed back ----
     std::string dir = newDir();
     {
-        Store s;
-        CHECK(s.begin(dir.c_str(), 1 << 20));
-        Presence presence;
+        Libraries libs;
+        CHECK(libs.begin(dir.c_str(), 1 << 20, fakeRandom));
+        Store& s = libs.main().store;
         ApiConfig cfg;
         cfg.nodeId = "drop-1";
         cfg.address = "http://192.168.1.50:8080";
-        Api api(s, presence, cfg);
+        Api api(libs, cfg);
 
         int status = 0;
         auto d = call(api, "POST", "/api/ops",
@@ -131,7 +151,7 @@ int main() {
 
         // a long return path is handed out a page at a time
         cfg.maxOpsPerReply = 1;
-        Api paged(s, presence, cfg);
+        Api paged(libs, cfg);
         d = call(paged, "GET", "/api/ops?after=");
         CHECK(d["ops"].size() == 1 && d["cursor"] == "drop-1.3");
         d = call(paged, "GET", "/api/ops?after=drop-1.3");
@@ -198,11 +218,10 @@ int main() {
     // ---- flash cap: the drop point leaves ops with the phone instead of filling up ----
     {
         std::string d2 = newDir();
-        Store s;
-        CHECK(s.begin(d2.c_str(), 450));
-        Presence presence;
+        Libraries libs;
+        CHECK(libs.begin(d2.c_str(), 450, fakeRandom));
         ApiConfig cfg;
-        Api api(s, presence, cfg);
+        Api api(libs, cfg);
         auto d = call(api, "POST", "/api/ops", "{\"ops\":[" + ann("Q:1") + "," + ann("Q:2") + "," + ann("Q:3") + "]}");
         CHECK(d["added"] == 2 && d["keep"].size() == 1 && d["keep"][0] == "Q:3");
     }
@@ -210,14 +229,13 @@ int main() {
     // ---- too big for the radio, and the spam guard: left with the phone ----
     {
         std::string d3 = newDir();
-        Store s;
-        CHECK(s.begin(d3.c_str(), 1 << 20));
-        Presence presence;
+        Libraries libs;
+        CHECK(libs.begin(d3.c_str(), 1 << 20, fakeRandom));
         ApiConfig cfg;
         cfg.maxOpBytes = 300;
         static int seen = 0;
         cfg.allow = [](void*, const char*) { return ++seen <= 2; };
-        Api api(s, presence, cfg);
+        Api api(libs, cfg);
         std::string big(250, 'x');
         auto d = call(api, "POST", "/api/ops",
                       "{\"ops\":[" + ann("R:1") + "," + ann("R:2", big.c_str()) + "," + ann("R:3") + "," + ann("R:4") + "]}");
@@ -255,6 +273,150 @@ int main() {
         const char* sw = "(()=>{var e=`osl-shell-a4092bd8ec7f`,s=[\"./\"]";
         CHECK(appVersionIn(sw, strlen(sw)) == "a4092bd8ec7f");
         CHECK(appVersionIn("no version here", 15) == "");
+    }
+
+    // ---- a library's password, checked as the library made it (core/fixtures/library-passwords.json) ----
+    {
+        Sha256 h;
+        h.update((const uint8_t*)"abc", 3);
+        uint8_t out[32];
+        h.finish(out);
+        CHECK(out[0] == 0xba && out[1] == 0x78 && out[31] == 0xad);   // FIPS 180-2's "abc"
+        std::ifstream f("../../core/fixtures/library-passwords.json");
+        std::stringstream text;
+        text << f.rdbuf();
+        JsonDocument cases;
+        CHECK(!deserializeJson(cases, text.str()));
+        CHECK(cases.size() >= 8);
+        for (JsonObjectConst c : cases.as<JsonArrayConst>()) {
+            bool got = verifyLibraryPassword(c["hash"].as<std::string>(), c["password"].as<std::string>());
+            if (got != c["valid"].as<bool>()) printf("  password case \"%s\": got %d\n", c["case"].as<const char*>(), got);
+            CHECK(got == c["valid"].as<bool>());
+        }
+    }
+
+    // ---- libraries: the list from the library, a password per library, a log each ----
+    {
+        std::ifstream f("../../core/fixtures/library-passwords.json");
+        std::stringstream text;
+        text << f.rdbuf();
+        JsonDocument cases;
+        deserializeJson(cases, text.str());
+        std::string poems = cases[0]["hash"].as<std::string>();   // "poems", 1000 iterations
+
+        std::string d4 = newDir();
+        Libraries libs;
+        CHECK(libs.begin(d4.c_str(), 1 << 20, fakeRandom));
+        ApiConfig cfg;
+        cfg.nodeId = "drop-4";
+        Api api(libs, cfg);
+        auto fromLibrary = [&](uint8_t kind, const std::string& body) {
+            std::string m(1, (char)kind);
+            m += body;
+            return libs.fromLibrary((const uint8_t*)m.data(), m.size());
+        };
+        int status = 0;
+
+        // before the list: only main; another library's paths are unknown here
+        call(api, "GET", "/api/l/poetry/ops?after=", "", &status);
+        CHECK(status == 404);
+
+        CHECK(fromLibrary(KIND_LIBS, "{\"libs\":[{\"id\":\"main\",\"name\":\"Maroon library\",\"hash\":\"\"},"
+                                     "{\"id\":\"poetry\",\"name\":\"Poetry club\",\"hash\":\"" + poems + "\"},"
+                                     "{\"id\":\"zines\",\"name\":\"Zines\",\"hash\":\"\"}]}"));
+        CHECK(libs.listed().size() == 3 && libs.main().name == "Maroon library");
+        call(api, "GET", "/api/l/zines/ops?after=", "", &status);
+        CHECK(status == 200);
+        auto d = call(api, "GET", "/api/l/poetry/ops?after=", "", &status);
+        CHECK(status == 401 && d["locked"] == true && d["library"]["name"] == "Poetry club");
+        d = call(api, "GET", "/api/l/poetry/directory");
+        CHECK(d["droppoint"] == true && d["library"]["locked"] == true && d["library"]["protected"] == true);
+        CHECK(d["libraries"].size() == 3 && d["libraries"][1]["open"] == false && d["me"].isNull());
+        call(api, "POST", "/api/l/poetry/ops", "{\"ops\":[" + ann("G:1") + "]}", &status);
+        CHECK(status == 401);   // shut both ways
+
+        // the password opens it for this browser only
+        call(api, "POST", "/api/l/poetry/unlock", "{\"password\":\"poem\"}", &status);
+        CHECK(status == 403 && lastCookie.empty());
+        call(api, "POST", "/api/l/poetry/unlock", "{\"password\":\"poems\"}", &status);
+        CHECK(status == 200 && lastCookie.compare(0, 5, "osld=") == 0 && lastCookie.find("HttpOnly") != std::string::npos);
+        std::string cookie = "other=1; " + lastCookie.substr(0, lastCookie.find(';'));
+        d = call(api, "GET", "/api/l/poetry/directory", "", nullptr, 1000, cookie);
+        CHECK(d["library"]["locked"] == false);
+        call(api, "GET", "/api/l/poetry/ops?after=", "", &status, 1000, cookie);
+        CHECK(status == 200);
+        call(api, "GET", "/api/l/poetry/ops?after=", "", &status, 1000, "osld=someoneelse");
+        CHECK(status == 401);
+
+        // its ops: from the library by radio, from phones to the library, never mixed with main's
+        std::string lib1 = ann("lib:7", "a poem");
+        CHECK(fromLibrary(KIND_LIB_OP, "poetry\n" + lib1));
+        CHECK(fromLibrary(KIND_OP, ann("lib:8", "for main")));
+        d = call(api, "GET", "/api/l/poetry/ops?after=", "", nullptr, 1000, cookie);
+        CHECK(d["ops"].size() == 1 && d["ops"][0]["id"] == "lib:7");
+        d = call(api, "GET", "/api/ops?after=");
+        CHECK(d["ops"].size() == 1 && d["ops"][0]["id"] == "lib:8");
+        d = call(api, "POST", "/api/l/poetry/ops", "{\"ops\":[" + ann("G:1") + "]}", &status, 1000, cookie);
+        CHECK(status == 200 && d["added"] == 1);
+        call(api, "POST", "/api/ops", "{\"ops\":[" + ann("G:2") + "]}");
+        std::string msg, which;
+        uint32_t seq;
+        std::vector<std::string> sent;
+        while (libs.nextForward(&msg, &which, &seq)) {
+            sent.push_back(which + " " + std::to_string((int)msg[0]) + " " + msg.substr(1, msg.find('{') - 1));
+            libs.forwarded(which, seq);
+        }
+        CHECK(sent.size() == 2);
+        CHECK(sent.size() == 2 && (sent[0] == "main 1 " || sent[1] == "main 1 "));
+        CHECK(sent.size() == 2 && (sent[0] == "poetry 3 poetry\n" || sent[1] == "poetry 3 poetry\n"));
+
+        // too many wrong passwords: wait a minute
+        for (int i = 0; i < 5; i++) call(api, "POST", "/api/l/poetry/unlock", "{\"password\":\"x\"}", nullptr, 2000);
+        call(api, "POST", "/api/l/poetry/unlock", "{\"password\":\"poems\"}", &status, 3000);
+        CHECK(status == 429);
+        call(api, "POST", "/api/l/poetry/unlock", "{\"password\":\"poems\"}", &status, 70000);
+        CHECK(status == 200);
+
+        // shut again on this browser
+        call(api, "POST", "/api/l/poetry/lock", "{}", nullptr, 70000, cookie);
+        call(api, "GET", "/api/l/poetry/ops?after=", "", &status, 70000, cookie);
+        CHECK(status == 401);
+
+        // a library's op before its list: kept, but shut to everyone until the list says how to open it
+        CHECK(fromLibrary(KIND_LIB_OP, "secret\n" + ann("lib:9")));
+        call(api, "GET", "/api/l/secret/ops?after=", "", &status);
+        CHECK(status == 401);
+        call(api, "POST", "/api/l/secret/unlock", "{\"password\":\"\"}", &status);
+        CHECK(status == 403);
+
+        // a new password closes it on every browser that had the old one
+        call(api, "POST", "/api/l/poetry/unlock", "{\"password\":\"poems\"}", nullptr, 70000, cookie);
+        call(api, "GET", "/api/l/poetry/ops?after=", "", &status, 70000, cookie);
+        CHECK(status == 200);
+        std::string other = cases[4]["hash"].as<std::string>();   // "poems" again, with another salt
+        CHECK(fromLibrary(KIND_LIBS, "{\"libs\":[{\"id\":\"main\",\"name\":\"Maroon library\",\"hash\":\"\"},"
+                                     "{\"id\":\"poetry\",\"name\":\"Poetry club\",\"hash\":\"" + other + "\"},"
+                                     "{\"id\":\"zines\",\"name\":\"Zines\",\"hash\":\"\"}]}"));
+        call(api, "GET", "/api/l/poetry/ops?after=", "", &status, 70000, cookie);
+        CHECK(status == 401);
+
+        // taken off the list: shut at once; its log erased once nothing in it waits to go
+        call(api, "POST", "/api/l/zines/ops", "{\"ops\":[" + ann("Z:1") + "]}");
+        CHECK(fromLibrary(KIND_LIBS, "{\"libs\":[{\"id\":\"main\",\"hash\":\"\"},{\"id\":\"poetry\",\"name\":\"Poetry club\",\"hash\":\"" + other + "\"}]}"));
+        call(api, "GET", "/api/l/zines/ops?after=", "", &status);
+        CHECK(status == 404);
+        CHECK(fileExists(d4 + "/l/zines/ops.log"));
+        CHECK(libs.nextForward(&msg, &which, &seq) && which == "zines");
+        libs.forwarded(which, seq);
+        CHECK(!fileExists(d4 + "/l/zines/ops.log"));
+        CHECK(!libs.nextForward(&msg, &which, &seq));
+
+        // a restart carries the same libraries, with their passwords and their logs
+        Libraries again;
+        CHECK(again.begin(d4.c_str(), 1 << 20, fakeRandom));
+        CHECK(again.find("poetry") && again.find("poetry")->hash == other && again.find("poetry")->store.count(Store::ARCHIVE) == 1);
+        CHECK(!again.find("zines"));
+        CHECK(again.main().store.count(Store::ARCHIVE) == 1);
     }
 
     // ---- query strings ----

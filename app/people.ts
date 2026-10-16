@@ -29,6 +29,15 @@ export async function startDirectory(store: LibraryStore, transport: HttpTranspo
                     again = false;
                     const d = await transport.directory();
                     if (!d) return;
+                    // a drop point says only whether this library is open here; who is who stays as the library said
+                    if (d.droppoint) {
+                        missing.value = d.library.id !== libraryId;
+                        if (missing.value) return;
+                        // a phone that has never been to the library knows only what the drop point says
+                        if (!directory.value) directory.value = d;
+                        locked.value = d.library.locked;
+                        return;
+                    }
                     // the node answered for another library: this one isn't there
                     missing.value = d.library.id !== libraryId;
                     if (missing.value) { directory.value = { ...d, library: { id: libraryId, name: libraryId, protected: false, locked: false } }; return; }

@@ -52,7 +52,8 @@ Design: [docs/libraries-and-accounts.md](docs/libraries-and-accounts.md). Rehear
 - [x] Collections: who may see and who may add, for everyone, only the owner, or chosen people and groups; the node sends a restricted collection only to the people it's for.
 - [ ] Make the first account on the Pi with the code on its screen, before the workshop: whoever does it looks after the node.
 - [ ] Decide whether `main` should be protected for the workshop (You → Libraries → Manage).
-- [ ] Drop points carry protected libraries and ask for the password there (W-D12, "Drop points"). Not built yet.
+- [x] Drop points carry the libraries the node admin chooses, protected ones too, and ask for the password there (rehearsed in `rehearse:radio`).
+- [ ] Flash the modem and the drop point from this version (the radio messages have two new kinds), and try a protected library at the drop point on a real phone.
 - [ ] Signed ops, so the radio can't be used to write as an account (W-D12, "Known gap").
 - [ ] On real phones: sign in on two phones, Keep on one, see it on the other; a protected library's lock screen on Safari.
 

@@ -61,6 +61,7 @@ export function Manage() {
             <Password saved={saved} />
             <Uploaders saved={saved} />
             {d.me?.admin && <Watch saved={saved} />}
+            {d.me?.admin && libraryId !== MAIN && <DropPointsCarry saved={saved} />}
             <Roles people={people} saved={saved} />
             <Groups people={people} saved={saved} />
             {d.me?.admin && <Node people={people} signup={signup} reload={load} />}
@@ -161,6 +162,33 @@ function Watch({ saved }: { saved: Saved }) {
             </label>
             <button class="manage__save" type="submit">Save</button>
         </form>
+    );
+}
+
+// Whether drop points carry this library: its notes, and its password's hash, go into
+// their flash, where anyone holding the board could read them (W-D12).
+function DropPointsCarry({ saved }: { saved: Saved }) {
+    const transport = useTransport();
+    const d = directory.value!;
+    const on = !!d.library.droppoints;
+    return (
+        <section class="manage__section">
+            <h3 class="manage__heading">Drop points</h3>
+            <p class="manage__text">
+                {on ? "Drop points carry this library: phones there can read it and add to it, by radio." : "Only at the library: drop points don't carry it."}
+                {d.library.protected && " A drop point asks for its password before showing anything."}
+            </p>
+            <p class="manage__text manage__warn">
+                What a drop point carries is in its flash: someone who takes the board could read the notes and try passwords against the hash
+                at their own pace. Collections that aren't for everyone never go out.
+            </p>
+            <label class="manage__check">
+                <input type="checkbox" checked={on}
+                    onChange={e => attempt(async () => saved(await transport.librarySettings({ droppoints: (e.currentTarget as HTMLInputElement).checked }),
+                        (e.currentTarget as HTMLInputElement).checked ? "Drop points will carry it." : "Drop points will stop carrying it, and erase it once they've sent on what phones left there."))} />
+                <span>Drop points carry this library</span>
+            </label>
+        </section>
     );
 }
 

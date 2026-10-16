@@ -9,10 +9,9 @@
 
 #include <string>
 
-namespace osl {
+#include "osl_kinds.h"  // KIND_STATUS: the first byte of a link message says what it is
 
-// The first byte of a link message says what it is (see src/common/lora_io.h).
-constexpr uint8_t KIND_STATUS = 2;
+namespace osl {
 
 struct DropStatus {
     std::string id;          // "drop-a1b2c3", from the board's MAC

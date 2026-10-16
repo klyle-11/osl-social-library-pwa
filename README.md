@@ -48,9 +48,10 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Who may add documents, any combination (anyone, signed in, members, uploaders, digitizers, presenters); enforced at the library | Rehearsed |
 | A watch folder per library: files put in it on the node become documents | Tried with `curl` and a scratch folder |
 | Collections: who may see (everyone, only me, people and groups) and who may add; private ones never leave the library for anyone else | Rehearsed |
+| Drop points carry other libraries the node admin chooses, protected ones too: the password is asked at the drop point, checked against the PBKDF2 hash the library sends by radio | Rehearsed (`npm run rehearse:radio`); not yet on a board |
 | Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
 
-Checked with 85 unit tests (core and node), `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (24 checks) and `npm run rehearse:people` (27 checks: libraries, passwords, accounts, roles, private and shared collections). It has **not** been run on a real phone or on the Pi yet.
+Checked with 89 unit tests (core and node), the firmware's tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (31 checks, with a protected library at the drop point) and `npm run rehearse:people` (27 checks: libraries, passwords, accounts, roles, private and shared collections). It has **not** been run on a real phone or on the Pi yet.
 
 ## Run it
 
@@ -126,7 +127,7 @@ After that phones can install the app and reopen it offline. Until then they can
 - `firmware/` builds the **modem** for the LilyGO T3-S3, the XIAO ESP32S3 + Wio-SX1262 kit and the Heltec V3. Boards of different makes can talk to each other.
 - **Ready for the bench:** two modems and `scripts/radio-test.mjs`. Fixed in 0cd8cee: the modem was sending every op without its kind byte, so the other board dropped it; the bench test would have shown 0 arrived.
 - **Drop point, ported to this branch:** it serves the app and the library's own `/api/ops` at the library's address (W-D10), keeps phones' notes in flash, and sends them to the Pi by radio; the Pi sends its notes back out. A phone's Sync screen shows notes "on the way by radio" until they come back from the library. The Pi's side is `node/radio.ts`, started with `RADIO_PORT`.
-- **Tested on a computer, not on boards:** `npm run rehearse:radio` runs the drop point's and the modem's code with a pretend radio, and walks phones in headless Chrome from the library to the drop point and back (17 checks). The drop point's board layer (`web.cpp`, `main.cpp`) has not been through the ESP32 compiler since the port: this session couldn't download it. See `firmware/README.md`.
+- **Tested on a computer, not on boards:** `npm run rehearse:radio` runs the drop point's and the modem's code with a pretend radio, and walks phones in headless Chrome from the library to the drop point and back, and opens a protected library at the drop point (31 checks). The drop point's board layer (`web.cpp`, `main.cpp`) has not been through the ESP32 compiler since the port: this session couldn't download it. See `firmware/README.md`.
 - **Drop points page:** each drop point says it's there every two minutes by radio, and the Pi lists it (Sync → Drop points): connected or not heard since, signal both ways, notes waiting, app version. The modem passes these on, so flash the modem from this version.
 - **Not ready:** more than one drop point. Frames carry no addresses yet; that is the relay work.
 

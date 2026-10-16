@@ -17,41 +17,34 @@
 #include <string>
 
 #include "../../lib/osl_node/src/osl_api.h"
+#include "../../lib/osl_node/src/osl_libraries.h"
 #include "../../lib/osl_node/src/osl_ops.h"
 #include "../../lib/osl_node/src/osl_status.h"
 #include "../../lib/osl_node/src/osl_store.h"
 #include "sim_radio.h"
 
-static constexpr uint8_t KIND_OP = 1;
+#include <random>
+
 static const char* NODE_ID = "drop-51a51a";
 
-static osl::Store store;
+static osl::Libraries libraries;
 static osl::Link* radioLink;
 static SimRadio* radio;
 static uint32_t fwdMsg = 0, fwdSeq = 0;
+static std::string fwdLib;
 static uint32_t statusMsg = 0, lastStatus = 0, statusEvery = 2;  // seconds; OSL_STATUS_S
-static osl::Presence presence;
 static std::string appVersion;
 static unsigned forwarded = 0, received = 0;
+
+static void randomBytes(uint8_t* out, size_t n) {
+    static std::random_device rd;
+    for (size_t i = 0; i < n; i++) out[i] = (uint8_t)rd();
+}
 
 // ---- radio: as main.cpp ----
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
-    if (len < 2 || data[0] != KIND_OP) {
-        fprintf(stderr, "drop point: dropped a radio message of an unknown kind\n");
-        radioLink->markDurable(msgId);
-        return;
-    }
-    JsonDocument doc;
-    if (deserializeJson(doc, (const char*)data + 1, len - 1) || osl::validateOp(doc.as<JsonObjectConst>())) {
-        fprintf(stderr, "drop point: dropped an invalid op from the library\n");
-        radioLink->markDurable(msgId);
-        return;
-    }
-    std::string json;
-    serializeJson(doc, json);
-    osl::Store::Result r = store.add(osl::Store::ARCHIVE, doc["id"].as<const char*>(), json.data(), json.size());
-    if (r == osl::Store::ADDED || r == osl::Store::DUPLICATE) {
+    if (libraries.fromLibrary(data, len)) {
         received++;
         radioLink->markDurable(msgId);
     }
@@ -63,7 +56,7 @@ static void onRemoteDurable(void*, uint32_t msgId) {
         return;
     }
     if (msgId != fwdMsg) return;
-    store.forwarded(fwdSeq);
+    libraries.forwarded(fwdLib, fwdSeq);
     forwarded++;
     fwdMsg = 0;
 }
@@ -79,9 +72,9 @@ static void sendStatusIfDue() {
     st.app = appVersion;
     st.every = statusEvery;
     st.up = 0;
-    st.waiting = store.waiting();
-    st.ops = store.lastSeq();
-    st.phones = presence.count(now);
+    st.waiting = libraries.waiting();
+    st.ops = libraries.lastSeq();
+    st.phones = libraries.main().presence.count(now);
     st.flashFree = 900000;
     st.heard = radioLink->stats().framesReceived > 0;
     st.rssi = radio->rssi;
@@ -95,12 +88,10 @@ static void sendStatusIfDue() {
 static void forwardNext() {
     if (fwdMsg || radioLink->busy()) return;
     uint32_t seq;
-    std::string json;
-    if (!store.peekForward(&seq, &json)) return;
-    std::string msg(1, (char)KIND_OP);
-    msg += json;
+    std::string msg, lib;
+    if (!libraries.nextForward(&msg, &lib, &seq)) return;
     fwdMsg = radioLink->send((const uint8_t*)msg.data(), msg.size());
-    if (fwdMsg) fwdSeq = seq;
+    if (fwdMsg) { fwdSeq = seq; fwdLib = lib; }
 }
 
 static void writeStatus(void*, osl::Writer& w) {
@@ -108,7 +99,7 @@ static void writeStatus(void*, osl::Writer& w) {
     snprintf(buf, sizeof buf,
              "{\"node\":\"%s\",\"role\":\"droppoint\",\"sim\":true,\"waitingToForward\":%u,\"forwardedThisBoot\":%u,"
              "\"receivedThisBoot\":%u,\"radio\":{\"ok\":%s}}",
-             NODE_ID, (unsigned)store.waiting(), forwarded, received, radio->off ? "false" : "true");
+             NODE_ID, (unsigned)libraries.waiting(), forwarded, received, radio->off ? "false" : "true");
     w.write(buf);
 }
 
@@ -116,7 +107,8 @@ static void writeStatus(void*, osl::Writer& w) {
 
 struct BufReply : osl::Reply {
     int status = 200;
-    std::string type = "application/json", body;
+    std::string type = "application/json", body, headers;
+    void header(const char* name, const std::string& value) override { headers += std::string(name) + ": " + value + "\r\n"; }
     void begin(int s, const char* t) override { status = s; type = t; }
     void write(const char* p, size_t n) override { body.append(p, n); }
 };
@@ -125,6 +117,9 @@ static const char* reason(int s) {
     switch (s) {
         case 200: return "OK";
         case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 429: return "Too Many Requests";
         case 404: return "Not Found";
         case 413: return "Payload Too Large";
         case 503: return "Service Unavailable";
@@ -144,9 +139,9 @@ static const char* contentType(const std::string& p) {
     return "application/octet-stream";
 }
 
-static void respond(int fd, int status, const std::string& type, const std::string& body) {
+static void respond(int fd, int status, const std::string& type, const std::string& body, const std::string& extra = "") {
     std::string head = "HTTP/1.1 " + std::to_string(status) + " " + reason(status) + "\r\nContent-Type: " + type +
-                       "\r\nContent-Length: " + std::to_string(body.size()) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n";
+                       "\r\nContent-Length: " + std::to_string(body.size()) + "\r\nCache-Control: no-store\r\nConnection: close\r\n" + extra + "\r\n";
     std::string all = head + body;
     for (size_t sent = 0; sent < all.size();) {
         ssize_t n = send(fd, all.data() + sent, all.size() - sent, MSG_NOSIGNAL);
@@ -184,13 +179,23 @@ static void serve(int fd, osl::Api& api, const std::string& www) {
     std::string body = req.substr(headerEnd + 4);
     r.body = body.data();
     r.bodyLen = body.size();
+    {
+        std::string head = req.substr(0, headerEnd), lower = head;
+        for (char& c : lower) c = tolower(c);
+        size_t at = lower.find("\r\ncookie:");
+        if (at != std::string::npos) {
+            size_t from = at + 9, end = head.find("\r\n", from);
+            r.cookie = head.substr(from, end - from);
+            r.cookie.erase(0, r.cookie.find_first_not_of(' '));
+        }
+    }
 
     if (r.path == "/sim/radio" && method == "POST") {
         radio->off = osl::queryParam(r.query, "on") == "0";
         return respond(fd, 200, "application/json", radio->off ? "{\"radio\":\"off\"}" : "{\"radio\":\"on\"}");
     }
     BufReply out;
-    if (api.handle(r, radio->millis(), out)) return respond(fd, out.status, out.type, out.body);
+    if (api.handle(r, radio->millis(), out)) return respond(fd, out.status, out.type, out.body, out.headers);
 
     std::string path = r.path;
     if (path.find("..") != std::string::npos) return respond(fd, 400, "text/plain", "bad path");
@@ -209,7 +214,7 @@ int main(int argc, char** argv) {
     }
     signal(SIGPIPE, SIG_IGN);
     std::string www = argv[2];
-    if (!store.begin(argv[3], 1 << 20)) {
+    if (!libraries.begin(argv[3], 1 << 20, randomBytes)) {
         fprintf(stderr, "op log could not be opened in %s\n", argv[3]);
         return 1;
     }
@@ -232,7 +237,7 @@ int main(int argc, char** argv) {
     std::string address = std::string("http://localhost:") + argv[1];
     cfg.address = address.c_str();
     cfg.status = writeStatus;
-    osl::Api api(store, presence, cfg);
+    osl::Api api(libraries, cfg);
 
     int server = socket(AF_INET, SOCK_STREAM, 0);
     int yes = 1;
@@ -245,8 +250,8 @@ int main(int argc, char** argv) {
         perror("http: bind");
         return 1;
     }
-    printf("drop point %s on http://localhost:%s, %u ops, %u waiting to forward\n", NODE_ID, argv[1], (unsigned)store.lastSeq(),
-           (unsigned)store.waiting());
+    printf("drop point %s on http://localhost:%s, %u ops, %u waiting to forward, %u libraries\n", NODE_ID, argv[1],
+           (unsigned)libraries.lastSeq(), (unsigned)libraries.waiting(), (unsigned)libraries.listed().size());
     fflush(stdout);
 
     for (;;) {

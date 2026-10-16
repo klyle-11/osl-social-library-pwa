@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "osl_libraries.h"
 #include "osl_ops.h"
 
 namespace osl {
@@ -131,7 +132,7 @@ void Api::writeNode(Writer& w) {
 
 // The position in this drop point's log a phone has read up to, out of every cursor it
 // sent ("lib.57,drop-a1b2c3.12"); 0 for none, or for one from an earlier log. As core/cursor.ts.
-uint32_t Api::since(const std::string& after) {
+uint32_t Api::since(const Store& store, const std::string& after) {
     size_t idLen = strlen(cfg_.nodeId), i = 0;
     while (i <= after.size()) {
         size_t end = after.find(',', i);
@@ -144,7 +145,7 @@ uint32_t Api::since(const std::string& after) {
                 if (after[j] < '0' || after[j] > '9') ok = false;
                 else at = at * 10 + (after[j] - '0');
             }
-            if (ok) return at <= store_.lastSeq() ? at : 0;
+            if (ok) return at <= store.lastSeq() ? at : 0;
         }
         i = end + 1;
     }
@@ -163,29 +164,29 @@ static void writeOp(void* ctx, const char* json, size_t len) {
     c->w->write(json, len);
 }
 
-void Api::getOps(const Request& req, uint32_t now, Reply& out) {
+void Api::getOps(Library& l, const Request& req, uint32_t now, Reply& out) {
     std::string user = queryParam(req.query, "user");
-    if (!user.empty()) presence_.hello(user, queryParam(req.query, "viewing"), now);
-    uint32_t from = since(queryParam(req.query, "after"));
+    if (!user.empty()) l.presence.hello(user, queryParam(req.query, "viewing"), now);
+    uint32_t from = since(l.store, queryParam(req.query, "after"));
 
     out.begin(200, "application/json");
     out.write("{\"ops\":[");
     OpsCtx ctx{&out, true};
     // only what came from the library; a long list goes out over several polls
-    uint32_t upto = store_.forEach(from, store_.lastSeq(), false, writeOp, &ctx, cfg_.maxOpsPerReply);
+    uint32_t upto = l.store.forEach(from, l.store.lastSeq(), false, writeOp, &ctx, cfg_.maxOpsPerReply);
     char cursor[24];
     snprintf(cursor, sizeof cursor, ".%lu", (unsigned long)upto);
     out.write("],\"cursor\":\"");
     out.write(cfg_.nodeId);  // a node id is plain ASCII (see main.cpp)
     out.write(cursor);
     out.write("\",\"presence\":");
-    presence_.write(out, now);
+    l.presence.write(out, now);
     out.write(",\"node\":");
     writeNode(out);
     out.write("}");
 }
 
-void Api::postOps(const Request& req, Reply& out) {
+void Api::postOps(Library& l, const Request& req, Reply& out) {
     JsonDocument doc;
     if (deserializeJson(doc, req.body, req.bodyLen) || !doc["ops"].is<JsonArrayConst>()) {
         return error(out, 400, "expected { ops: [...] }");
@@ -207,7 +208,8 @@ void Api::postOps(const Request& req, Reply& out) {
             take = json.size() <= cfg_.maxOpBytes;  // too big for the radio
         }
         if (take && cfg_.allow) take = cfg_.allow(cfg_.allowCtx, op["user"]);
-        Store::Result r = take ? store_.add(Store::PHONE, id, json.data(), json.size()) : Store::FAILED;
+        if (take) take = libraries_.room(json.size() + 64);   // the flash is shared by every library's log
+        Store::Result r = take ? l.store.add(Store::PHONE, id, json.data(), json.size()) : Store::FAILED;
         if (r == Store::ADDED) added++;
         else if (r == Store::DUPLICATE) duplicates++;
         else keep.push_back(id);  // FULL, FAILED, or not taken
@@ -222,7 +224,7 @@ void Api::postOps(const Request& req, Reply& out) {
         if (i) out.write(",");
         writeJsonString(out, keep[i]);
     }
-    snprintf(num, sizeof num, ".%lu", (unsigned long)store_.lastSeq());
+    snprintf(num, sizeof num, ".%lu", (unsigned long)l.store.lastSeq());
     out.write("],\"cursor\":\"");
     out.write(cfg_.nodeId);
     out.write(num);
@@ -231,10 +233,73 @@ void Api::postOps(const Request& req, Reply& out) {
     out.write("}");
 }
 
+// What the app needs to know here: which libraries this drop point carries, and whether
+// this one is open to this browser. Accounts are at the library: nobody is signed in here.
+void Api::directory(Library& l, const Request& req, Reply& out) {
+    out.begin(200, "application/json");
+    out.write("{\"revision\":0,\"droppoint\":true,\"libraries\":[");
+    bool first = true;
+    for (Library* x : libraries_.listed()) {
+        if (!first) out.write(",");
+        first = false;
+        out.write("{\"id\":");
+        writeJsonString(out, x->id);
+        out.write(",\"name\":");
+        writeJsonString(out, x->name);
+        out.write(x->hash.empty() ? ",\"protected\":false" : ",\"protected\":true");
+        out.write(libraries_.isOpen(*x, req.cookie) ? ",\"open\":true}" : ",\"open\":false}");
+    }
+    out.write("],\"me\":null,\"signup\":false,\"setup\":false,\"library\":{\"id\":");
+    writeJsonString(out, l.id);
+    out.write(",\"name\":");
+    writeJsonString(out, l.name);
+    out.write(l.hash.empty() ? ",\"protected\":false" : ",\"protected\":true");
+    out.write(libraries_.isOpen(l, req.cookie) ? ",\"locked\":false}}" : ",\"locked\":true}}");
+}
+
+void Api::unlock(Library& l, const Request& req, uint32_t now, Reply& out) {
+    JsonDocument doc;
+    if (deserializeJson(doc, req.body, req.bodyLen) || !doc["password"].is<const char*>()) return error(out, 400, "expected { password }");
+    std::string cookie;
+    switch (libraries_.unlock(l, doc["password"].as<const char*>(), req.cookie, now, &cookie)) {
+        case Libraries::OPENED:
+            if (!cookie.empty()) out.header("Set-Cookie", cookie);
+            out.begin(200, "application/json");
+            out.write("{\"ok\":true}");
+            return;
+        case Libraries::WAIT:
+            return error(out, 429, "Too many wrong tries. Wait a minute and try again.");
+        default:
+            return error(out, 403, l.hash == "?" ? "This drop point hasn't heard how to open this library yet. Try at the library."
+                                                 : "That isn't this library's password.");
+    }
+}
+
+void Api::locked(Reply& out, const Library& l) {
+    out.begin(401, "application/json");
+    out.write("{\"error\":\"This library is protected. Enter its password.\",\"locked\":true,\"library\":{\"id\":");
+    writeJsonString(out, l.id);
+    out.write(",\"name\":");
+    writeJsonString(out, l.name);
+    out.write("},\"node\":");   // so a phone knows it is at a drop point, where accounts don't work
+    writeNode(out);
+    out.write("}");
+}
+
 bool Api::handle(const Request& req, uint32_t now, Reply& out) {
-    const std::string& p = req.path;
+    std::string p = req.path;
     if (p.compare(0, 5, "/api/") != 0) return false;
     bool get = !strcmp(req.method, "GET") || !strcmp(req.method, "HEAD"), post = !strcmp(req.method, "POST");
+
+    // /api/l/<id>/... is another library's; anything else is the main library's
+    Library* l = &libraries_.main();
+    if (p.compare(0, 7, "/api/l/") == 0) {
+        size_t slash = p.find('/', 7);
+        if (slash == std::string::npos) return error(out, 404, "not found"), true;
+        l = libraries_.find(p.substr(7, slash - 7));
+        if (!l) return error(out, 404, "This library isn't carried at this drop point."), true;
+        p = "/api" + p.substr(slash);
+    }
 
     if (p == "/api/health" && get) {
         out.begin(200, "application/json");
@@ -248,10 +313,18 @@ bool Api::handle(const Request& req, uint32_t now, Reply& out) {
         out.write("],\"host\":\"\",\"node\":");
         writeNode(out);
         out.write("}");
-    } else if (p == "/api/ops" && get) {
-        getOps(req, now, out);
-    } else if (p == "/api/ops" && post) {
-        postOps(req, out);
+    } else if (p == "/api/directory" && get) {
+        directory(*l, req, out);
+    } else if (p == "/api/unlock" && post) {
+        unlock(*l, req, now, out);
+    } else if (p == "/api/lock" && post) {
+        libraries_.lock(*l, req.cookie);
+        out.begin(200, "application/json");
+        out.write("{\"ok\":true}");
+    } else if (p == "/api/ops" && (get || post)) {
+        if (!libraries_.isOpen(*l, req.cookie)) locked(out, *l);
+        else if (get) getOps(*l, req, now, out);
+        else postOps(*l, req, out);
     } else if (p == "/api/media" && post) {
         error(out, 507, "This drop point doesn't keep files. The photo waits on your phone and goes to the library next time you're there.",
               ",\"noMedia\":true");

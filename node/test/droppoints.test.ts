@@ -71,11 +71,11 @@ test("the bridge hands the modem's status lines to the register, and nothing goe
     const r = new DropPointRegister(null, () => {});
     const lines: string[] = [];
     const bridge = createBridge({
-        log: [], logId: "lib", accept: () => ({ added: 0, rejected: [] }),
+        libraries: () => [{ id: "main", name: "Library", hash: null, log: [], logId: "lib", accept: () => ({ added: 0, rejected: [] }) }],
         loadPosition: () => null, savePosition: () => {}, write: l => lines.push(l),
         onStatus: line => { r.heard(line, T0); }, say: () => {}
     });
     bridge.onLine(JSON.stringify({ t: "status", ...beat() }));
     assert.equal(r.list(T0, "")[0].id, "drop-a1b2c3");
-    assert.equal(lines.length, 0);   // the modem marks a heartbeat durable itself
+    assert.equal(lines.length, 0);   // the modem marks a heartbeat durable itself (and nothing pumped, so no list either)
 });

@@ -35,6 +35,11 @@ uint64_t Store::hashId(const char* id) {
     return h;
 }
 
+void Store::close() {
+    if (log_) fclose(log_);
+    log_ = nullptr;
+}
+
 bool Store::begin(const char* dir, size_t maxBytes) {
     dir_ = dir;
     maxBytes_ = maxBytes;

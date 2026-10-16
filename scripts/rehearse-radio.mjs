@@ -59,9 +59,9 @@ const browser = await chromium.launch(process.env.CHROME ? { executablePath: pro
 const errors = [];
 
 // A phone at a fixed address; `near` says which box answers it.
-async function phone(name, device) {
+async function phone(name, device, near = LIB, path = '/') {
   const ctx = await browser.newContext(devices[device]);
-  const p = { name, ctx, near: LIB };
+  const p = { name, ctx, near };
   await ctx.route(`${ORIGIN}/**`, async (route) => {
     const u = new URL(route.request().url());
     // a real phone's Origin is the address it reached, so it matches the node's Host
@@ -77,7 +77,7 @@ async function phone(name, device) {
   p.page = await ctx.newPage();
   p.page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
   p.page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`${name}: ${m.text()}`); });
-  await p.page.goto(ORIGIN + '/');
+  await p.page.goto(ORIGIN + path);
   await p.page.waitForSelector('.header');
   return p;
 }
@@ -194,6 +194,39 @@ try {
   const countA = await A.page.evaluate(() => document.querySelectorAll('.annotation-thread__body').length);
   const countB = await (async () => { await go(B, '#/document/steward%3A1'); await B.page.waitForTimeout(2500); return B.page.evaluate(() => document.querySelectorAll('.annotation-thread__body').length); })();
   report('both phones show the same notes', countA === countB && countA === 2, `${countA} and ${countB}`);
+
+  // ---- a protected library, carried by the drop point (W-D12) ----
+  const POETRY_LOG = join(WORK, 'library', 'data', 'libraries', 'poetry', 'ops.jsonl');
+  const signup = await fetch(LIB + '/api/account/signup', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'ama', name: 'Ama', password: 'longenough', code: '123456', device: 'd-admin' }) });
+  const cookie = (signup.headers.get('set-cookie') ?? '').split(';')[0];
+  const asAdmin = (path, body) => fetch(LIB + path, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });
+  await asAdmin('/api/libraries/create', { id: 'poetry', name: 'Poetry club', password: 'poems' });
+  await asAdmin('/api/l/poetry/libraries/settings', { droppoints: true });
+  const now = new Date().toISOString();
+  await asAdmin('/api/l/poetry/ops', { ops: [
+    { id: 'd-admin:1', user: 'd-admin', timestamp: now, type: 'document', fileType: 'text', properties: { title: 'A club poem', author: 'Ama', type: 'poem' } },
+    { id: 'd-admin:2', user: 'd-admin', timestamp: now, type: 'annotation', target: 'd-admin:1', body: 'Read it aloud first', access: 'public' }] });
+  t = await until(30000, async () => (await fetch(DROP + '/api/l/poetry/directory')).ok);
+  const shut = await (await fetch(DROP + '/api/l/poetry/directory')).json();
+  report('the library sends the drop point its list, and it carries the protected library', t !== null && shut.library?.locked === true, took(t));
+  report('…shut to anyone without the password', (await fetch(DROP + '/api/l/poetry/ops?after=')).status === 401);
+  report('a library drop points don\'t carry isn\'t there at all', (await fetch(DROP + '/api/l/elsewhere/ops?after=')).status === 404);
+
+  const C = await phone('phone C', 'iPhone 13', DROP, '/?library=poetry');
+  t = await until(15000, () => C.page.isVisible('.lock-screen'));
+  const lockText = t !== null ? await C.page.textContent('.lock-screen') : '';
+  report('a phone at the drop point gets its lock screen', t !== null && /drop point/.test(lockText), took(t));
+  await C.page.fill('.lock-screen__input', 'poems');
+  await C.page.click('.lock-screen__open');
+  t = await until(20000, async () => (await C.page.textContent('body')).includes('A club poem'));
+  report('its password opens it there, and what came by radio is in it', t !== null, took(t));
+  await go(C, '#/document/d-admin%3A1');
+  t = await until(10000, async () => (await notes(C)).includes('Read it aloud first'));
+  report('…notes too', t !== null, took(t));
+  await post(C, 'Answered at the drop point');
+  t = await until(40000, () => existsSync(POETRY_LOG) && readFileSync(POETRY_LOG, 'utf8').includes('Answered at the drop point'));
+  report('a note written there crosses the radio into that library, not the main one', t !== null && !inLibrary('Answered at the drop point'), took(t));
   report('no errors in any page\'s console', errors.length === 0, errors.slice(0, 3).join(' | '));
 } finally {
   await browser.close();

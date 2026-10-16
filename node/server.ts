@@ -12,7 +12,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 import { hostname, networkInterfaces } from "node:os";
 import { createServer as createNetServer } from "node:net";
 import { extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
-import { startRadio, type Bridge } from "./radio";
+import { startRadio, type Bridge, type RadioLibrary } from "./radio";
 import { DropPointRegister } from "./droppoints";
 import { exportEntries, sendZip } from "./export";
 import { writeAside } from "./files";
@@ -81,11 +81,22 @@ const dropPoints = new DropPointRegister(
     json => writeAside(DROP_POINTS, json)
 );
 
+// The libraries drop points carry: the main one, and any other the node admin lets go
+// out (W-D12: their ops and password hashes sit in the boards' flash).
+function carried(): RadioLibrary[] {
+    return libraries.list().filter(l => l.id === MAIN || l.droppoints).map(lib => {
+        const log = libraries.log(lib.id);
+        return {
+            id: lib.id, name: lib.name, hash: lib.password, log: log.log, logId: log.logId,
+            accept: (ops: unknown[]) => log.accept(ops, documentRule(lib, NOT_PAIRED)),
+            skip: log.notFor(null, identityOf(lib))
+        };
+    });
+}
+
 const radio: Bridge | null = process.env.RADIO_PORT
     ? startRadio(process.env.RADIO_PORT, {
-        log: main.log, logId: main.logId,
-        accept: ops => main.accept(ops, documentRule(libraries.get(MAIN)!, NOT_PAIRED)),
-        skip: op => main.notFor(null, identityOf(libraries.get(MAIN)!))(op),
+        libraries: carried,
         loadPosition: () => (existsSync(RADIO_POSITION) ? readFileSync(RADIO_POSITION, "utf8").trim() : null),
         savePosition: p => writeAside(RADIO_POSITION, p),
         onStatus: line => { dropPoints.heard(line, new Date()); }
@@ -360,7 +371,7 @@ function directory(lib: LibraryConfig, w: Who) {
         library: {
             id: lib.id, name: lib.name, protected: !!lib.password, locked: false,
             upload: lib.upload, mayUpload: mayUpload(lib, w.account, w.paired), roles: [...roles],
-            ...(w.account?.admin && { watch: lib.watch })
+            ...(w.account?.admin && { watch: lib.watch, droppoints: lib.id === MAIN || lib.droppoints })
         },
         accounts: Object.fromEntries(people.map(a => [a.id, a.name])),
         devices: Object.fromEntries(people.flatMap(a => a.devices.map(d => [d, a.id]))),
@@ -626,10 +637,14 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
             if (folder && (!isAbsolute(folder) || !existsSync(folder) || !statSync(folder).isDirectory())) return json(res, 400, { error: "That isn't a folder on the node (give its full path)." });
             watch = folder ? { folder: resolve(folder) } : null;
         }
+        // what goes out to the drop points' flash is for whoever looks after the node
+        if (typeof body.droppoints === "boolean" && !w.account?.admin) return json(res, 403, { error: "Only the node admin can send a library to the drop points." });
+        if (typeof body.droppoints === "boolean" && lib.id === MAIN) return json(res, 400, { error: "The main library always goes to the drop points." });
         libraries.update(lib, {
             ...(typeof body.name === "string" && { name: body.name }),
             ...(Array.isArray(body.upload) && { upload: cleanUploaders(body.upload) }),
-            ...(watch !== undefined && { watch })
+            ...(watch !== undefined && { watch }),
+            ...(typeof body.droppoints === "boolean" && { droppoints: body.droppoints })
         });
         if (watch !== undefined) watcher.refresh();
         return json(res, 200, directory(lib, w));

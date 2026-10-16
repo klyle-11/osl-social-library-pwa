@@ -49,6 +49,9 @@ static const char* statusLine(int status) {
     switch (status) {
         case 200: return "200 OK";
         case 400: return "400 Bad Request";
+        case 401: return "401 Unauthorized";
+        case 403: return "403 Forbidden";
+        case 429: return "429 Too Many Requests";
         case 404: return "404 Not Found";
         case 413: return "413 Payload Too Large";
         case 503: return "503 Service Unavailable";
@@ -82,6 +85,14 @@ static esp_err_t sendFile(httpd_req_t* req, const std::string& path) {
 class ChunkReply : public osl::Reply {
    public:
     explicit ChunkReply(httpd_req_t* r) : req_(r) {}
+    // the server keeps pointers to header values until the reply is sent: they live here
+    void header(const char* name, const std::string& value) override {
+        if (headers_ >= 2) return;
+        names_[headers_] = name;
+        values_[headers_] = value;
+        httpd_resp_set_hdr(req_, names_[headers_].c_str(), values_[headers_].c_str());
+        headers_++;
+    }
     void begin(int status, const char* type) override {
         httpd_resp_set_status(req_, statusLine(status));
         httpd_resp_set_type(req_, type);
@@ -109,6 +120,8 @@ class ChunkReply : public osl::Reply {
         len_ = 0;
     }
     httpd_req_t* req_;
+    std::string names_[2], values_[2];
+    int headers_ = 0;
     char buf_[1024];
     size_t len_ = 0;
     bool failed_ = false;
@@ -147,6 +160,13 @@ static esp_err_t appHandler(httpd_req_t* req) {
     if (connectivityCheck(req, r.path)) return ESP_OK;
 
     if (r.path.compare(0, 5, "/api/") == 0) {
+        // a protected library's token, when this browser gave its password here
+        size_t cookieLen = httpd_req_get_hdr_value_len(req, "Cookie");
+        if (cookieLen && cookieLen < 2048) {
+            r.cookie.resize(cookieLen + 1);
+            if (httpd_req_get_hdr_value_str(req, "Cookie", &r.cookie[0], cookieLen + 1) == ESP_OK) r.cookie.resize(cookieLen);
+            else r.cookie.clear();
+        }
         char* body = nullptr;
         size_t len = req->content_len;
         if (req->method == HTTP_POST) {

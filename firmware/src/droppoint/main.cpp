@@ -9,6 +9,8 @@
 //    the op is durable.
 //  - Receives the library's ops over LoRa (the return path) and hands only those
 //    out to phones: an op coming back tells a phone it reached the library.
+//  - Carries the libraries the library lists (lib/osl_node/src/osl_libraries.h), each
+//    in its own log; a protected one only for browsers that gave its password here.
 
 #include <Arduino.h>
 #include <DNSServer.h>
@@ -22,14 +24,18 @@
 #include "config.h"
 #include "droppoint.h"
 #include "lora_io.h"
+#include "osl_libraries.h"
 #include "osl_link.h"
 #include "osl_ops.h"
 #include "osl_status.h"
 
-static_assert(KIND_STATUS == osl::KIND_STATUS, "lora_io.h and osl_status.h must agree");
+#if __has_include(<esp_random.h>)
+#include <esp_random.h>  // esp_fill_random (in esp_system.h on older IDF)
+#endif
 
-static osl::Store store;
-static osl::Presence presence;
+static_assert(KIND_STATUS == osl::KIND_STATUS && KIND_OP == osl::KIND_OP, "lora_io.h and osl_kinds.h must agree");
+
+static osl::Libraries libraries;
 static osl::Api* theApi = nullptr;
 static String nodeId;   // "drop-a1b2c3": also the log id in this drop point's cursors
 static String address;  // where phones reach the library (and so this board)
@@ -43,6 +49,7 @@ static osl::Link radioLink(io);  // not "link": that name is taken by POSIX link
 static DNSServer dns;
 static bool radioOk = false;
 static uint32_t fwdMsg = 0, fwdSeq = 0;
+static std::string fwdLib;
 static uint32_t statusMsg = 0, lastStatus = 0;
 static std::string appVersion;  // of the app in flash, so the library can tell a stale copy
 static uint32_t receivedFromArchive = 0, forwardedToArchive = 0;
@@ -66,17 +73,20 @@ static void fillStatus(JsonDocument& d) {
     const osl::LinkStats& s = radioLink.stats();
     d["node"] = nodeId;
     d["role"] = "droppoint";
-    d["ops"] = store.lastSeq();
-    d["fromPhones"] = store.count(osl::Store::PHONE);
-    d["fromArchive"] = store.count(osl::Store::ARCHIVE);
-    d["waitingToForward"] = store.waiting();
+    d["ops"] = libraries.lastSeq();
+    d["fromPhones"] = libraries.count(osl::Store::PHONE);
+    d["fromArchive"] = libraries.count(osl::Store::ARCHIVE);
+    d["waitingToForward"] = libraries.waiting();
+    d["libraries"] = libraries.listed().size();
     d["forwardedThisBoot"] = forwardedToArchive;
     d["receivedThisBoot"] = receivedFromArchive;
-    d["logBytes"] = store.bytes();
+    d["logBytes"] = libraries.bytes();
     d["flashFree"] = LittleFS.totalBytes() - LittleFS.usedBytes();
     d["heapFree"] = ESP.getFreeHeap();
     d["phonesConnected"] = WiFi.softAPgetStationNum();
-    d["phonesUsingTheApp"] = presence.count(millis());
+    size_t using_ = 0;
+    for (osl::Library* l : libraries.listed()) using_ += l->presence.count(millis());
+    d["phonesUsingTheApp"] = using_;
     d["uptimeSec"] = millis() / 1000;
     JsonObject r = d["radio"].to<JsonObject>();
     r["ok"] = radioOk;
@@ -98,28 +108,15 @@ static void writeStatus(void*, osl::Writer& w) {
     w.write(out.data(), out.size());
 }
 
-// ---- radio: ops from the archive ----
+// ---- radio: ops and the list of libraries from the archive ----
 
 static void onDeliver(void*, uint32_t msgId, const uint8_t* data, size_t len) {
-    if (len < 2 || data[0] != KIND_OP) {
-        Serial.println("dropped a radio message of an unknown kind");
-        radioLink.markDurable(msgId);
-        return;
-    }
-    JsonDocument doc;
-    if (deserializeJson(doc, (const char*)data + 1, len - 1) || osl::validateOp(doc.as<JsonObjectConst>())) {
-        Serial.println("dropped an invalid op from the library");
-        radioLink.markDurable(msgId);  // nothing useful to keep; stop the retries
-        return;
-    }
-    std::string json;
-    serializeJson(doc, json);  // normalised to one line
-    osl::Store::Result r;
+    bool durable;
     {
         StoreLock lock;
-        r = store.add(osl::Store::ARCHIVE, doc["id"].as<const char*>(), json.data(), json.size());
+        durable = libraries.fromLibrary(data, len);
     }
-    if (r == osl::Store::ADDED || r == osl::Store::DUPLICATE) {
+    if (durable) {
         receivedFromArchive++;
         radioLink.markDurable(msgId);
     } else {
@@ -136,7 +133,7 @@ static void onRemoteDurable(void*, uint32_t msgId) {
     }
     if (msgId != fwdMsg) return;
     StoreLock lock;
-    store.forwarded(fwdSeq);
+    libraries.forwarded(fwdLib, fwdSeq);
     forwardedToArchive++;
     fwdMsg = 0;
 }
@@ -155,9 +152,10 @@ static void sendStatusIfDue() {
     st.up = now / 1000;
     {
         StoreLock lock;
-        st.waiting = store.waiting();
-        st.ops = store.lastSeq();
-        st.phones = presence.count(now);
+        st.waiting = libraries.waiting();
+        st.ops = libraries.lastSeq();
+        st.phones = 0;
+        for (osl::Library* l : libraries.listed()) st.phones += l->presence.count(now);
     }
     st.flashFree = LittleFS.totalBytes() - LittleFS.usedBytes();
     st.heard = radioLink.stats().framesReceived > 0;
@@ -172,15 +170,24 @@ static void sendStatusIfDue() {
 static void forwardNext() {
     if (fwdMsg || radioLink.busy()) return;
     uint32_t seq;
-    std::string json;
+    std::string msg, lib;
     {
         StoreLock lock;
-        if (!store.peekForward(&seq, &json)) return;
+        if (!libraries.nextForward(&msg, &lib, &seq)) return;
     }
-    std::string msg(1, (char)KIND_OP);
-    msg += json;
     fwdMsg = radioLink.send((const uint8_t*)msg.data(), msg.size());
-    if (fwdMsg) fwdSeq = seq;
+    if (fwdMsg) {
+        fwdSeq = seq;
+        fwdLib = lib;
+    }
+}
+
+static void randomBytes(uint8_t* out, size_t n) { esp_fill_random(out, n); }
+
+// Every library's log shares the flash: none may eat into what is kept free.
+static bool roomFor(size_t bytes) {
+    size_t total = LittleFS.totalBytes(), used = LittleFS.usedBytes();
+    return used < total && total - used > OPS_RESERVE_BYTES + bytes;
 }
 
 void setup() {
@@ -202,15 +209,16 @@ void setup() {
     }
     size_t freeBytes = LittleFS.totalBytes() - LittleFS.usedBytes();
     size_t maxBytes = logSize + (freeBytes > OPS_RESERVE_BYTES ? freeBytes - OPS_RESERVE_BYTES : 0);
-    if (!store.begin("/littlefs/osl", maxBytes)) Serial.println("op log could not be opened");
+    if (!libraries.begin("/littlefs/osl", maxBytes, randomBytes, roomFor)) Serial.println("op log could not be opened");
     if (FILE* sw = fopen("/littlefs/www/sw.js", "rb")) {
         std::string text(4096, '\0');
         text.resize(fread(&text[0], 1, text.size(), sw));
         fclose(sw);
         appVersion = osl::appVersionIn(text.data(), text.size());
     }
-    Serial.printf("%s: %u ops, %u waiting to forward, log %u of %u bytes\n", nodeId.c_str(), (unsigned)store.lastSeq(),
-                  (unsigned)store.waiting(), (unsigned)store.bytes(), (unsigned)maxBytes);
+    Serial.printf("%s: %u ops, %u waiting to forward, logs %u bytes (each up to %u), %u libraries\n", nodeId.c_str(),
+                  (unsigned)libraries.lastSeq(), (unsigned)libraries.waiting(), (unsigned)libraries.bytes(), (unsigned)maxBytes,
+                  (unsigned)libraries.listed().size());
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, strlen(AP_PASSWORD) ? AP_PASSWORD : nullptr, AP_CHANNEL, 0, AP_MAX_CLIENTS);
@@ -242,7 +250,7 @@ void setup() {
     cfg.maxOpBytes = osl::MAX_OP_BYTES;
     cfg.allow = allowAuthor;
     cfg.status = writeStatus;
-    theApi = new osl::Api(store, presence, cfg);
+    theApi = new osl::Api(libraries, cfg);
 
     if (!webStart()) Serial.println(LIBRARY_HTTPS ? "web server failed to start (missing /tls/cert.pem or /tls/key.pem? run uploadfs)"
                                                   : "web server failed to start");

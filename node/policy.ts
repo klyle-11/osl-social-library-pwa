@@ -18,6 +18,7 @@ export type LibraryConfig = {
     passwordSet: string | null,     // when it was set: changing it locks every session out again
     upload: Uploader[],
     watch: { folder: string } | null,
+    droppoints: boolean,            // its ops (and password hash) go out to the drop points; main's always do
     roles: Record<string, Role[]>,  // account id -> roles here
     groups: Group[]
 };

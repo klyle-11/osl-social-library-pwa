@@ -9,9 +9,14 @@
 //           Ops that were hidden are never sent; the hide itself is. Nor are the contents
 //           of collections that aren't for everyone (W-D12): they stay at the library.
 //
-// The modem speaks one JSON object per line (firmware/src/modem/main.cpp):
-//   to the modem    {"t":"send","id":"<op id>","op":{...}}  {"t":"durable","m":<msg>}  {"t":"ping"}
-//   from the modem  {"t":"recv","m":<msg>,"op":{...}}  {"t":"sent","id":"<op id>"}  {"t":"hello",...}  {"t":"log","msg":"..."}
+// Several libraries (W-D12): the main one always, and any other the node admin lets drop
+// points carry. Their ops take turns on the air, each marked with its library, and the
+// drop points get the list (names, and password hashes so they can ask for the password).
+//
+// The modem speaks one JSON object per line (firmware/lib/osl_modem/src/osl_modem.h):
+//   to the modem    {"t":"send","id":"<op id>","op":{...}} (+ "l":"<library>" for another library)
+//                   {"t":"libs","libs":[{"id","name","hash"}]}  {"t":"durable","m":<msg>}  {"t":"ping"}
+//   from the modem  {"t":"recv","m":<msg>,"op":{...}} (+ "l")  {"t":"sent","id":"<op id>"}  {"t":"hello",...}  {"t":"log","msg":"..."}
 //                   {"t":"status","rssi":..,"snr":..,"status":{...}}   a drop point's heartbeat
 
 import { closeSync, createReadStream, openSync, writeSync } from "node:fs";
@@ -19,16 +24,26 @@ import { execFileSync } from "node:child_process";
 import type { Op } from "../core/types";
 
 const RESEND_MS = 120_000;   // the modem said nothing about the op in flight: offer it again
+const LIST_EVERY_MS = 600_000;   // the list goes out when it changes, and now and then for a drop point that missed it
+export const MAIN = "main";
 
-export type BridgeDeps = {
-    log: Op[],                                        // the node's log, in arrival order (read only)
+// a library the drop points carry
+export type RadioLibrary = {
+    id: string,
+    name: string,
+    hash: string | null,                              // its password's PBKDF2 hash (node/passwords.ts), null if open
+    log: Op[],                                        // its log, in arrival order (read only)
     logId: string,                                    // so a saved position from an earlier log is ignored
     accept(ops: unknown[]): { added: number, rejected: string[] },   // stored on disk before it returns
-    loadPosition(): string | null,                    // "<log id>.<n>": how far the return path has sent
+    skip?: (op: Op) => boolean                        // never sent: a collection that isn't for everyone
+};
+
+export type BridgeDeps = {
+    libraries(): RadioLibrary[],                      // the main library first, then any other carried
+    loadPosition(): string | null,                    // how far the return path has sent, per library (JSON)
     savePosition(position: string): void,
     write(line: string): void,                        // one line to the modem
     onStatus?: (line: Record<string, unknown>) => void,   // a drop point's heartbeat (node/droppoints.ts)
-    skip?: (op: Op) => boolean,                       // never sent: a collection that isn't for everyone
     now?: () => number,
     say?: (msg: string) => void
 };
@@ -44,54 +59,87 @@ export type BridgeStatus = {
 export function createBridge(d: BridgeDeps) {
     const now = d.now ?? Date.now;
     const say = d.say ?? console.log;
-    let sent = position(d.loadPosition());
-    let inflight: { at: number, id: string, sentAt: number } | null = null;   // `at`: index in the log
+    const saved = parsePositions(d.loadPosition());
+    const sent = new Map<string, number>();            // library -> how far its return path has gone
+    let inflight: { lib: string, at: number, id: string, sentAt: number } | null = null;   // `at`: index in its log
     let modem: BridgeStatus["modem"] = null;
     let lastHeard: string | null = null;
-    let received = 0, delivered = 0;
+    let received = 0, delivered = 0, turn = 0;
+    let listSent = "", listAt = -Infinity;
 
-    function position(saved: string | null): number {
-        const dot = saved?.lastIndexOf(".") ?? -1;
-        if (!saved || dot <= 0 || saved.slice(0, dot) !== d.logId) return 0;   // another log: start again
-        const n = Number(saved.slice(dot + 1));
-        return Number.isInteger(n) && n >= 0 && n <= d.log.length ? n : 0;
+    // where a library's return path is: its saved position if it is from this log, else the start
+    function position(lib: RadioLibrary): number {
+        if (sent.has(lib.id)) return sent.get(lib.id)!;
+        const p = saved[lib.id];
+        const dot = p?.lastIndexOf(".") ?? -1;
+        let n = 0;
+        if (p && dot > 0 && p.slice(0, dot) === lib.logId) {
+            const v = Number(p.slice(dot + 1));
+            if (Number.isInteger(v) && v >= 0 && v <= lib.log.length) n = v;
+        }
+        sent.set(lib.id, n);
+        return n;
     }
 
     const send = (msg: object) => d.write(JSON.stringify(msg) + "\n");
 
-    function hidden(): Set<string> {
+    function hidden(lib: RadioLibrary): Set<string> {
         const ids = new Set<string>();
-        for (const op of d.log) if (op.type === "hide") ids.add(op.target);
+        for (const op of lib.log) if (op.type === "hide") ids.add(op.target);
         return ids;
     }
 
-    // Offer the next op to the modem. One in flight at a time; call it often.
+    // the libraries drop points carry, their names and password hashes: when it changes, and now and then
+    function sendList(libs: RadioLibrary[]) {
+        const list = libs.map(l => ({ id: l.id, name: l.name, hash: l.hash ?? "" }));
+        const text = JSON.stringify(list);
+        if (text === listSent && now() - listAt < LIST_EVERY_MS) return;
+        send({ t: "libs", libs: list });
+        listSent = text;
+        listAt = now();
+    }
+
+    // Offer the next op to the modem, the libraries taking turns. One in flight at a time; call it often.
     function pump() {
+        const libs = d.libraries();
+        sendList(libs);
         if (inflight) {
+            const lib = libs.find(l => l.id === inflight!.lib);
+            if (!lib) { inflight = null; return pump(); }   // no longer carried
             if (now() - inflight.sentAt < RESEND_MS) return;
-            send({ t: "send", id: inflight.id, op: d.log[inflight.at] });
+            send(line(lib, lib.log[inflight.at]));
             inflight.sentAt = now();
             return;
         }
-        const skip = hidden();
-        while (sent < d.log.length) {
-            const op = d.log[sent];
-            if (skip.has(op.id) || d.skip?.(op)) { advance(sent + 1); continue; }   // hidden or not for everyone: never goes out
-            inflight = { at: sent, id: op.id, sentAt: now() };
-            send({ t: "send", id: op.id, op });
-            return;
+        for (let k = 0; k < libs.length; k++) {
+            const lib = libs[(turn + k) % libs.length];
+            const skip = hidden(lib);
+            let at = position(lib);
+            while (at < lib.log.length) {
+                const op = lib.log[at];
+                if (skip.has(op.id) || lib.skip?.(op)) { advance(lib, ++at); continue; }   // hidden or not for everyone: never goes out
+                inflight = { lib: lib.id, at, id: op.id, sentAt: now() };
+                turn = (turn + k + 1) % libs.length;
+                send(line(lib, op));
+                return;
+            }
         }
     }
 
-    function advance(to: number) {
-        sent = to;
-        d.savePosition(`${d.logId}.${sent}`);
+    function line(lib: RadioLibrary, op: Op) {
+        return lib.id === MAIN ? { t: "send", id: op.id, op } : { t: "send", id: op.id, l: lib.id, op };
     }
 
-    function onLine(line: string) {
+    function advance(lib: RadioLibrary, to: number) {
+        sent.set(lib.id, to);
+        saved[lib.id] = `${lib.logId}.${to}`;
+        d.savePosition(JSON.stringify(saved));
+    }
+
+    function onLine(text: string) {
         let msg: Record<string, unknown>;
         try {
-            const parsed: unknown = JSON.parse(line);
+            const parsed: unknown = JSON.parse(text);
             if (typeof parsed !== "object" || parsed === null) return;
             msg = parsed as Record<string, unknown>;
         } catch {
@@ -101,16 +149,23 @@ export function createBridge(d: BridgeDeps) {
         switch (msg.t) {
             case "recv": {
                 // Invalid ops are refused but still "durable": keeping them would only make
-                // the drop point send them again forever.
-                const r = d.accept([msg.op]);
-                if (r.rejected.length) say(`radio: refused an op from a drop point (${r.rejected[0]})`);
-                received += r.added;
+                // the drop point send them again forever. So are ops for a library not carried.
+                const id = typeof msg.l === "string" ? msg.l : MAIN;
+                const lib = d.libraries().find(l => l.id === id);
+                if (!lib) {
+                    say(`radio: refused an op for "${id}", which drop points don't carry`);
+                } else {
+                    const r = lib.accept([msg.op]);
+                    if (r.rejected.length) say(`radio: refused an op from a drop point (${r.rejected[0]})`);
+                    received += r.added;
+                }
                 send({ t: "durable", m: msg.m });
                 break;
             }
             case "sent":
                 if (inflight && msg.id === inflight.id) {
-                    advance(inflight.at + 1);
+                    const lib = d.libraries().find(l => l.id === inflight!.lib);
+                    if (lib) advance(lib, inflight.at + 1);
                     inflight = null;
                     delivered++;
                     pump();
@@ -120,6 +175,8 @@ export function createBridge(d: BridgeDeps) {
                 d.onStatus?.(msg);
                 break;
             case "hello":
+                // a modem that just started (or was plugged back in) may have lost the list: it goes again
+                if (!modem) listSent = "";
                 modem = { radio: msg.radio === true, rssi: msg.rssi as number, snr: msg.snr as number, stats: msg.stats };
                 if (msg.radio !== true) say("radio: the modem says its radio did not start (check its pins)");
                 break;
@@ -133,11 +190,23 @@ export function createBridge(d: BridgeDeps) {
         return {
             modem, lastHeardFromModem: lastHeard,
             receivedFromDropPoint: received, sentToDropPoint: delivered,
-            waitingToSend: d.log.length - sent
+            waitingToSend: d.libraries().reduce((n, l) => n + l.log.length - position(l), 0)
         };
     }
 
     return { onLine, pump, status };
+}
+
+// {"main":"<log id>.<n>", ...}; from before there were several, the main library's alone
+function parsePositions(text: string | null): Record<string, string> {
+    if (!text) return {};
+    if (!text.startsWith("{")) return { [MAIN]: text.trim() };
+    try {
+        const v = JSON.parse(text) as Record<string, unknown>;
+        return Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string"));
+    } catch {
+        return {};
+    }
 }
 
 export type Bridge = ReturnType<typeof createBridge>;

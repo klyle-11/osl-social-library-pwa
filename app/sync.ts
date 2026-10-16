@@ -61,6 +61,7 @@ export async function startSync(store: LibraryStore, transport: HttpTransport) {
                 // the node wants this library's password: nothing to retry until someone gives it
                 syncState.value = "locked";
                 locked.value = true;
+                nodeRole.value = transport.role;
             } else {
                 syncState.value = navigator.onLine ? "no-node" : "offline";
             }

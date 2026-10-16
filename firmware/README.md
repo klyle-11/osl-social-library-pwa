@@ -40,9 +40,12 @@ can damage the radio.
 | `lib/osl_link/` | The radio link: fragments, CRC, STATUS bitmap, retransmit, POLL, DURABLE (store-and-forward). Plain C++. |
 | `lib/osl_node/osl_store.*` | The drop point's op log in flash: append-only, a CRC on every line, survives power cuts. |
 | `lib/osl_node/osl_ops.*` | Op validation: the app's rules (`core/ops.ts`), checked against the same cases (`core/fixtures/validation.json`). |
-| `lib/osl_node/osl_api.*` | The drop point's answers to the app: the library's `/api/ops`, `/api/health`, `/api/info`, presence. |
+| `lib/osl_node/osl_api.*` | The drop point's answers to the app: the library's `/api/ops`, `/api/health`, `/api/info`, presence; another library's under `/api/l/<id>/`; `/api/unlock` for a protected one. |
+| `lib/osl_node/osl_libraries.*` | The libraries a drop point carries: one log each (the main one where it always was), the list from the library, and which browsers gave a protected library's password. |
+| `lib/osl_node/osl_crypto.*` | SHA-256 and PBKDF2, to check a library's password against the hash the library sends. Checked against hashes Node made (`core/fixtures/library-passwords.json`). |
+| `lib/osl_modem/` | The modem's work without the board: lines from the Pi to radio messages and back. The board and the simulator both run it. |
 | `src/common/lora_io.*` | SX1262 driver (RadioLib) with listen-before-talk |
-| `src/modem/main.cpp` | Modem: USB serial ⇄ radio, one JSON object per line. Stores nothing. |
+| `src/modem/main.cpp` | Modem: USB serial ⇄ radio (`lib/osl_modem`), one JSON object per line. Stores nothing. |
 | `src/droppoint/` | Drop point: Wi-Fi network, DNS, web server (`web.cpp` only moves requests to `osl_api`), forwarding |
 | `include/config.h` | Frequency, power, pins, **the library's address**, Wi-Fi name, limits |
 | `test/` | Desktop tests (`run.sh`), and the desktop drop point and modem used by `npm run rehearse:radio` (`sim/`) |
@@ -65,6 +68,15 @@ DURABLE                     "stored safely; you can delete your copy"
 2. The receiver replies with STATUS, saying which fragments it has. The sender resends only the missing ones.
 3. When all fragments are in, the receiver hands the op to storage, and only when storage confirms does it send DURABLE.
 4. If a reply is lost, the sender POLLs, backing off from 4 s up to 60 s, and never gives up.
+
+A message's first byte says what it is (`lib/osl_link/src/osl_kinds.h`):
+
+| Kind | What | Payload |
+|---|---|---|
+| 1 | an op of the main library | the op's JSON |
+| 2 | a drop point's heartbeat | `osl_status.h` |
+| 3 | an op of another library | the library's id, a newline, the op's JSON |
+| 4 | the libraries drop points carry (from the library) | `{"libs":[{"id","name","hash"}]}`: the hash is the password's PBKDF2, `""` when it has none |
 
 Message ids are random, so a reboot never confuses an old message with a new one. Op ids make repeats harmless at both ends. The largest op the drop point takes is 4,000 bytes (20 fragments); a bigger one stays on the phone and goes to the library directly.
 
@@ -164,7 +176,7 @@ npm run test:firmware        # link, op log, validation and API, on this compute
 npm run rehearse:radio       # library + drop point + radio, with phones in headless Chrome
 ```
 
-`rehearse:radio` compiles the drop point's and the modem's own code for the computer (`test/sim/`), joins them with a pretend radio, and walks a phone from the library to the drop point and back. It also checks the Drop points page: connected, not heard while out of range, connected again. It found the modem bug fixed in 0cd8cee (every op arriving as an unknown message).
+`rehearse:radio` compiles the drop point's and the modem's own code for the computer (`test/sim/`), joins them with a pretend radio, and walks a phone from the library to the drop point and back. It also checks the Drop points page: connected, not heard while out of range, connected again; and a protected library carried by the drop point: shut without its password, opened with it, a note written there reaching that library. It found the modem bug fixed in 0cd8cee (every op arriving as an unknown message).
 
 ## Status and limits
 
@@ -172,3 +184,4 @@ npm run rehearse:radio       # library + drop point + radio, with phones in head
 - **Not yet built for the boards here.** `src/droppoint/web.cpp` and `src/droppoint/main.cpp` (the board's web server and Wi-Fi) have not been through the ESP32 compiler since this port. Expect small fixes on the first `pio run`, and report the first error.
 - **Memory:** the Heltec V3 has no PSRAM. Plain http allows 5 connections at a time; https allows 3, at about 40 KB each. If you see heap errors, lower `max_open_sockets` in `web.cpp`.
 - **One link, one drop point,** until frames carry addresses.
+- **Other libraries (W-D12):** a drop point carries the main library, and any other the node admin ticks on its Manage page ("Drop points carry this library"). The library sends the list (names, password hashes) when it changes and every ten minutes. A protected library asks for its password at the drop point (a second or so on the board) and is open to that browser until the drop point restarts. Five wrong tries in a minute make it wait. Accounts stay at the library. A library taken off the list is shut at once and its log erased once what phones left in it has gone on. **Its notes and its password's hash are in the board's flash:** anyone who takes the board can read them and try passwords at their own pace. Rehearsed in `rehearse:radio`; not yet on a board.

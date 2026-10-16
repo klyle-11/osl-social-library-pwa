@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { attempt, directory, tell, useTransport } from "../state";
+import { attempt, directory, nodeRole, tell, useTransport } from "../state";
 import { unlock } from "../people";
 import { href } from "../route";
 
@@ -15,7 +15,11 @@ export function LockScreen() {
         <section class="lock-screen" aria-labelledby="lock-title">
             <p class="lock-screen__label">Protected library</p>
             <h2 class="lock-screen__title" id="lock-title">{name}</h2>
-            <p class="lock-screen__text">Enter its password to open it on this device. People with a role in it can sign in instead.</p>
+            <p class="lock-screen__text">
+                {nodeRole.value === "droppoint"
+                    ? "You're at a drop point. Enter the library's password to open it here; accounts work at the library itself."
+                    : "Enter its password to open it on this device. People with a role in it can sign in instead."}
+            </p>
             <form class="lock-screen__form" onSubmit={e => {
                 e.preventDefault();
                 if (!password || busy) return;
@@ -34,7 +38,8 @@ export function LockScreen() {
                 <button class="lock-screen__open" type="submit" disabled={busy}>{busy ? "Checking…" : "Open"}</button>
             </form>
             <p class="lock-screen__links">
-                <a href={href({ view: "account" })}>Sign in</a> · <a href={href({ view: "libraries" })}>Other libraries</a>
+                {nodeRole.value !== "droppoint" && <><a href={href({ view: "account" })}>Sign in</a> · </>}
+                <a href={href({ view: "libraries" })}>Other libraries</a>
             </p>
         </section>
     );

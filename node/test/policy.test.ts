@@ -5,7 +5,7 @@ import { hashAccountPassword, hashLibraryPassword, verifyPassword } from "../pas
 
 const lib = (o: Partial<LibraryConfig> = {}): LibraryConfig => ({
     id: "poetry", name: "Poetry", created: "", password: null, passwordSet: null,
-    upload: ["guests"], watch: null, roles: {}, groups: [], ...o
+    upload: ["guests"], watch: null, droppoints: false, roles: {}, groups: [], ...o
 });
 const account = (id: string, o: Partial<Account> = {}): Account =>
     ({ id, username: id, name: id, hash: "", admin: false, created: "", devices: [], ...o });

@@ -5,9 +5,14 @@
 //   GET  /api/info                    {"secure":..., "addresses":[...], "host":"", "node":{...}}
 //   GET  /api/ops?after=&user=&viewing=   ops from the library, a cursor, who is here
 //   POST /api/ops {"ops":[...]}       store phones' ops for the library; "keep" lists ops left with the phone
+//   GET  /api/directory               the libraries carried here, and whether this one is open
+//   POST /api/unlock {"password"}     a protected library's password: opens it for this browser (a cookie)
+//   POST /api/lock                    shuts it again for this browser
 //   POST /api/media                   507 noMedia: files wait on the phone for the library
 //   POST /api/pair, /api/showing, /api/upload   503: only at the library
 //   GET  /api/status                  counters, for testing
+// Another library's are the same under /api/l/<id>/ (osl_libraries.h); one not carried here
+// answers 404, so a phone never hands its notes to the wrong library.
 //
 // The drop point is a write-only inbox: it hands phones only ops that came to it
 // from the library, so an op coming back means it reached the library.
@@ -26,6 +31,9 @@
 
 namespace osl {
 
+class Libraries;
+struct Library;
+
 class Writer {
    public:
     virtual ~Writer() {}
@@ -33,9 +41,10 @@ class Writer {
     void write(const char* s);
 };
 
-// A reply: begin() once with the status, then write the body.
+// A reply: header() any number of times, then begin() once with the status, then the body.
 class Reply : public Writer {
    public:
+    virtual void header(const char* name, const std::string& value) = 0;
     virtual void begin(int status, const char* contentType) = 0;
 };
 
@@ -43,6 +52,7 @@ struct Request {
     const char* method = "GET";
     std::string path;   // "/api/ops"
     std::string query;  // "after=...&user=..." (still percent-encoded)
+    std::string cookie; // the Cookie header: an unlocked library's token is in it
     const char* body = nullptr;
     size_t bodyLen = 0;
 };
@@ -81,21 +91,23 @@ struct ApiConfig {
 
 class Api {
    public:
-    Api(Store& store, Presence& presence, const ApiConfig& cfg) : store_(store), presence_(presence), cfg_(cfg) {}
+    Api(Libraries& libraries, const ApiConfig& cfg) : libraries_(libraries), cfg_(cfg) {}
 
     // Answers an /api/ request and returns true; returns false for anything else
     // (the app's own files, served by the caller).
     bool handle(const Request& req, uint32_t nowMs, Reply& out);
 
    private:
-    Store& store_;
-    Presence& presence_;
+    Libraries& libraries_;
     ApiConfig cfg_;
 
-    void getOps(const Request& req, uint32_t nowMs, Reply& out);
-    void postOps(const Request& req, Reply& out);
+    void getOps(Library& l, const Request& req, uint32_t nowMs, Reply& out);
+    void postOps(Library& l, const Request& req, Reply& out);
+    void directory(Library& l, const Request& req, Reply& out);
+    void unlock(Library& l, const Request& req, uint32_t nowMs, Reply& out);
+    void locked(Reply& out, const Library& l);
     void writeNode(Writer& w);
-    uint32_t since(const std::string& after);
+    uint32_t since(const Store& store, const std::string& after);
 };
 
 // Helpers, exposed for tests.

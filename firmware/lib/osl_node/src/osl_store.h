@@ -41,6 +41,9 @@ class Store {
     typedef void (*OpFn)(void* ctx, const char* json, size_t len);
     uint32_t forEach(uint32_t since, uint32_t upto, bool includePhone, OpFn fn, void* ctx, size_t limit = (size_t)-1);
 
+    // Lets go of the log file (before it is deleted). begin() opens it again.
+    void close();
+
     // Forwarding to the archive, strictly in order, one at a time.
     bool peekForward(uint32_t* seq, std::string* json);
     void forwarded(uint32_t seq);

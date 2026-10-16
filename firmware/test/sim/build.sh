@@ -9,6 +9,6 @@ fi
 OUT="${1:-${TMPDIR:-/tmp}}"
 mkdir -p "$OUT"
 FLAGS="-std=c++17 -O1 -Wall -Wextra -Wno-maybe-uninitialized -I.deps/ArduinoJson/src -I../lib/osl_link/src"
-LIBS="../lib/osl_node/src/osl_store.cpp ../lib/osl_node/src/osl_api.cpp ../lib/osl_node/src/osl_ops.cpp ../lib/osl_node/src/osl_status.cpp ../lib/osl_link/src/osl_link.cpp"
+LIBS="../lib/osl_node/src/osl_store.cpp ../lib/osl_node/src/osl_api.cpp ../lib/osl_node/src/osl_ops.cpp ../lib/osl_node/src/osl_status.cpp ../lib/osl_node/src/osl_crypto.cpp ../lib/osl_node/src/osl_libraries.cpp ../lib/osl_link/src/osl_link.cpp"
 c++ $FLAGS -o "$OUT/osl_droppoint_sim" sim/droppoint_sim.cpp $LIBS
-c++ $FLAGS -o "$OUT/osl_modem_sim" sim/modem_sim.cpp ../lib/osl_link/src/osl_link.cpp
+c++ $FLAGS -o "$OUT/osl_modem_sim" sim/modem_sim.cpp ../lib/osl_modem/src/osl_modem.cpp ../lib/osl_link/src/osl_link.cpp
