@@ -220,7 +220,11 @@ void setup() {
     IPAddress ip;
     if (ip.fromString(LIBRARY_ADDRESS)) WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
     else Serial.println("LIBRARY_ADDRESS in config.h is not an IP address");
-    address = String("http://") + LIBRARY_ADDRESS + (LIBRARY_PORT == 80 ? "" : ":" + String(LIBRARY_PORT));
+    address = String("http://") + LIBRARY_ADDRESS;
+    if (LIBRARY_PORT != 80) {
+        address += ':';
+        address += String(LIBRARY_PORT);
+    }
 #endif
     dns.setErrorReplyCode(DNSReplyCode::NoError);
     dns.start(53, "*", WiFi.softAPIP());  // every name is this board
