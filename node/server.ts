@@ -704,7 +704,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (path === "/api/export") {
         if (!open) return locked(res, lib);
         const identity = identityOf(lib);
-        const skip = log.notFor(w.account?.id ?? null, identity);
+        const skip = log.notFor(w.account?.id ?? null, identity, mayAdminister(lib, w.account));
         const cat = lib.id === MAIN ? catalog() : { stewards: [], ops: [] };
         const ops = [...cat.ops, ...log.log.filter(o => !skip(o))];
         const fileFor = (doc: { hash?: string, url?: string }) => {
@@ -736,13 +736,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         if (user && (!owner || owner === w.account?.id)) log.board.hello(user, (url.searchParams.get("viewing") ?? "").slice(0, 200), Date.now());
         const identity = identityOf(lib);
         const viewer = w.account?.id ?? null;
-        const skip = log.notFor(viewer, identity);
+        // a library's admins see everyone's Kept (W-D12); everyone else only what is for them
+        const admin = mayAdminister(lib, w.account);
+        const skip = log.notFor(viewer, identity, admin);
         let ops = log.log.slice(after).filter(o => !skip(o));
         // someone who may have been let into a collection since: send what was in it
         const access = `${log.accessRevision}.${libraries.revision}`;
         if (viewer && url.searchParams.get("access") !== access) {
             const have = new Set(ops.map(o => o.id));
-            ops = [...log.sharedWith(viewer, identity).filter(o => !have.has(o.id)), ...ops];
+            ops = [...log.sharedWith(viewer, identity, admin).filter(o => !have.has(o.id)), ...ops];
         }
         return json(res, 200, {
             ops, cursor: log.cursorNow(), presence: log.board.snapshot(Date.now()), node: log.node,

@@ -65,7 +65,7 @@ The node admin can give a library a folder on the node. New files in it become d
 
 The owner sets both, any time:
 
-- **See:** everyone (the default), only them, or chosen people and groups.
+- **See:** everyone (the default), only them, or chosen people and groups. **Kept** starts as only them: each person's Kept is private to them (on all their devices) and to the library's admins, until they share it from its page.
 - **Add:** only them (the default), everyone, or chosen people and groups. Whoever added a document may take it out again; the owner may take out anything.
 
 They are one more kind of op, `collection-access`, latest wins, set only by the owner. As with who may edit details, the setting that counts is the one standing when the add was made.

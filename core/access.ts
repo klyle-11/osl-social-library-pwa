@@ -36,6 +36,16 @@ export function formatAudience(a: Audience): string {
     return a.kind === "people" ? `people:${a.ids.join(",")}` : a.kind;
 }
 
+// Kept is a collection like any other, but each person's own by default: private to them
+// (and their library's admins) until they share it.
+export function isKept(collectionId: string): boolean {
+    return collectionId.endsWith("/kept");
+}
+
+export function defaultAccess(collectionId: string): { see: Audience, add: Audience } {
+    return { see: isKept(collectionId) ? OWNER : EVERYONE, add: OWNER };
+}
+
 // Is this person in it? The owner always is. `person` is already resolved (personOf).
 // A guest's device id can be listed (who may edit a document's details, from before
 // accounts), but only accounts are in groups.

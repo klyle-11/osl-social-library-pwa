@@ -52,3 +52,15 @@ test("a rule can refuse an op, and says which, or leave it with the phone", () =
     assert.equal(log.accessRevision, 1);
     done();
 });
+
+test("Kept is sent only to its owner, and to the library's admins", () => {
+    const { log, done } = fresh();
+    log.accept([op({ id: "d-a:20", user: "d-a", timestamp: at(20), type: "add-to-collection", collectionId: "a-ama/kept", documentId: "x:1" })]);
+    const kept = log.log[0];
+    assert.equal(log.notFor("a-ama", identity)(kept), false);
+    assert.equal(log.notFor("a-rosa", identity)(kept), true);
+    assert.equal(log.notFor(null, identity)(kept), true);              // nor by radio
+    assert.equal(log.notFor("a-rosa", identity, true)(kept), false);   // an admin
+    assert.deepEqual(log.sharedWith("a-rosa", identity, true).map(o => o.id), ["d-a:20"]);
+    done();
+});

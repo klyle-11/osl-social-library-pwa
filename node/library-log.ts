@@ -10,7 +10,7 @@ import { isShareable } from "../core/store";
 import { PresenceBoard } from "../core/presence";
 import { positionFor } from "../core/cursor";
 import { collectionOwner } from "../core/ops";
-import { inAudience, parseAudience, personOf } from "../core/access";
+import { defaultAccess, inAudience, isKept, parseAudience, personOf } from "../core/access";
 import type { CollectionAccess, Identity, Op } from "../core/types";
 
 export type LogPaths = { log: string, logId: string, conflicts: string };
@@ -137,7 +137,8 @@ export class LibraryLog {
         return { added, duplicates, conflicts, rejected, refused, keep, cursor: this.cursorNow(), node: this.node };
     }
 
-    // Who may see a collection, as its owner last said (everyone, if they never did).
+    // Who may see a collection, as its owner last said (everyone, if they never did; only
+    // them for Kept).
     private see(collectionId: string, identity: Identity) {
         const owner = personOf(identity, collectionOwner(collectionId));
         const ops = (this.access.get(collectionId) ?? []).filter(o => personOf(identity, o.user) === owner).sort(compareOps);
@@ -145,20 +146,26 @@ export class LibraryLog {
             const a = parseAudience(ops[i].see);
             if (a && parseAudience(ops[i].add)) return { owner, see: a };
         }
-        return { owner, see: { kind: "everyone" as const } };
+        return { owner, see: defaultAccess(collectionId).see };
+    }
+
+    // may this viewer have this collection? An admin has everyone's Kept.
+    private visible(collectionId: string, viewer: string | null, identity: Identity, admin: boolean): boolean {
+        const { owner, see } = this.see(collectionId, identity);
+        if (see.kind === "everyone" || (admin && isKept(collectionId))) return true;
+        return viewer !== null && inAudience(see, viewer, owner, identity);
     }
 
     // A test for ops this viewer must not be sent: what's in, and what's called, a collection
-    // that isn't for them. `viewer` is a person (an account), or null for anyone at all.
-    // The answer for each collection is worked out once per call.
-    notFor(viewer: string | null, identity: Identity): (op: Op) => boolean {
+    // that isn't for them. `viewer` is a person (an account, or a guest's device), or null for
+    // anyone at all. The answer for each collection is worked out once per call.
+    notFor(viewer: string | null, identity: Identity, admin = false): (op: Op) => boolean {
         const known = new Map<string, boolean>();
         return op => {
             if (!COLLECTION_OPS.has(op.type) || !("collectionId" in op)) return false;
             let hide = known.get(op.collectionId);
             if (hide === undefined) {
-                const { owner, see } = this.see(op.collectionId, identity);
-                hide = see.kind !== "everyone" && (viewer === null || !inAudience(see, viewer, owner, identity));
+                hide = !this.visible(op.collectionId, viewer, identity, admin);
                 known.set(op.collectionId, hide);
             }
             return hide;
@@ -167,11 +174,11 @@ export class LibraryLog {
 
     // Everything in the collections this viewer may see that aren't for everyone: sent again
     // when their access may have changed, since their cursor has moved past it.
-    sharedWith(viewer: string, identity: Identity): Op[] {
+    sharedWith(viewer: string, identity: Identity, admin = false): Op[] {
         const out: Op[] = [];
-        for (const id of this.access.keys()) {
-            const { owner, see } = this.see(id, identity);
-            if (see.kind !== "everyone" && inAudience(see, viewer, owner, identity)) out.push(...(this.byCollection.get(id) ?? []));
+        for (const id of this.byCollection.keys()) {
+            if (this.see(id, identity).see.kind === "everyone") continue;
+            if (this.visible(id, viewer, identity, admin)) out.push(...(this.byCollection.get(id) ?? []));
         }
         return out;
     }

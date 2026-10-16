@@ -20,7 +20,7 @@ test("renaming a collection shows the later name; a non-owner can't rename it", 
 });
 
 test("kept collection is named Kept and holds the document", () => {
-    const c = view(all).collections["d-b/kept"];
+    const c = view(all, "d-b").collections["d-b/kept"];
     assert.equal(c.name, "Kept");
     assert.deepEqual(c.documentIds, ["d-a:1"]);
 });
@@ -31,7 +31,7 @@ test("names are last-writer-wins per user", () => {
 
 test("removing from a collection wins over an earlier add", () => {
     const remove: Op = { id: "d-b:4", user: "d-b", timestamp: "2026-10-04T16:00:00Z", type: "remove-from-collection", collectionId: "d-b/kept", documentId: "d-a:1" };
-    const v = view([...all, remove]);
+    const v = view([...all, remove], "d-b");
     assert.deepEqual(v.collections["d-b/kept"].documentIds, []);
     assert.equal(v.feed.some(e => e.kind === "collect" && e.op.collectionId === "d-b/kept"), false);
 });
@@ -290,6 +290,16 @@ test("only the owner sets who may see; a malformed setting is ignored", () => {
     const c = idView(ops, "d-c").collections["a-ama/1"];
     assert.equal(c.see.kind, "everyone");
     assert.equal(c.add.kind, "owner");
+});
+
+test("Kept is its owner's alone by default; the library's admins see it; its owner can share it", () => {
+    const ops = [...shelf, add("d-x:70", "d-x", "a-ama/kept", "s:1", 1)];
+    assert.ok(idView(ops, "d-a").collections["a-ama/kept"]);           // Ama, on another of her devices
+    assert.equal(idView(ops, "d-b").collections["a-ama/kept"], undefined);
+    assert.equal(idView(ops, "d-b").feed.some(e => e.kind === "collect" && e.op.collectionId === "a-ama/kept"), false);
+    assert.ok(buildViews(ops, { viewer: "d-b", stewards: [], identity, admin: true }).collections["a-ama/kept"]);
+    const shared = [...ops, access("d-a:71", "d-a", "a-ama/kept", "everyone", "owner", 2)];
+    assert.ok(idView(shared, "d-b").collections["a-ama/kept"]);
 });
 
 test("without an account a guest is their own person, as before", () => {

@@ -58,7 +58,7 @@ export function Collection({ id }: { id: string }) {
                         <button class="collection__rename-open" type="button"
                             onClick={() => { setName(c.name ?? ""); setEditing(true); }}>{c.name ? "Rename" : "Name it"}</button>
                     )}
-                    {mine && !kept && (
+                    {mine && (
                         <button class="collection__share-open" type="button" aria-expanded={sharing} onClick={() => setSharing(!sharing)}>
                             {sharing ? "Close sharing" : "Sharing"}
                         </button>

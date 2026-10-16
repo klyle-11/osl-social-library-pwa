@@ -53,7 +53,7 @@ export const signedOut = computed(() => {
 export const views = computed(() =>
     buildViews(opLog.value, {
         viewer: viewer.value, stewards: stewards.value, identity: identity.value,
-        accounts: directory.value?.accounts ?? {}
+        accounts: directory.value?.accounts ?? {}, admin: !!directory.value?.library.roles?.includes("admin")
     }));
 
 export type SyncState = "starting" | "no-node" | "syncing" | "synced" | "offline" | "paused" | "locked";

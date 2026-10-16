@@ -1,6 +1,6 @@
 import { collectionOwner, keptCollectionId } from "./ops";
 import { compareOps } from "./merge";
-import { EVERYONE, NO_IDENTITY, OWNER, inAudience, parseAudience, personOf, type Audience } from "./access";
+import { NO_IDENTITY, defaultAccess, inAudience, isKept, parseAudience, personOf, type Audience } from "./access";
 import type {
     AddToCollection, Annotation, CollectionId, Describe, DescribeField, DocumentMedium, Identity, LibraryDocument,
     NameCollection, Op, OpId
@@ -13,7 +13,8 @@ export type ViewOptions = {
     viewer: string,         // whose screen this is (private annotations, "mine")
     stewards: string[],     // users (devices or accounts) who may hide anyone's contributions
     identity?: Identity,    // which devices are whose accounts, and the groups (from the node)
-    accounts?: Record<string, string>   // accounts' names (from the node), passed through for the screen
+    accounts?: Record<string, string>,  // accounts' names (from the node), passed through for the screen
+    admin?: boolean                     // the viewer is one of the library's admins: they see everyone's Kept
 };
 
 export type CollectionView = {
@@ -136,9 +137,10 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
         let c = collections[id];
         if (!c) {
             const owner = person(collectionOwner(id));
+            const start = defaultAccess(id);
             c = collections[id] = {
                 id, owner, name: null, documentIds: [], addedBy: {}, updated: when,
-                see: EVERYONE, add: OWNER, mine: owner === me, mayAdd: owner === me
+                see: start.see, add: start.add, mine: owner === me, mayAdd: owner === me
             };
             if (id === keptCollectionId(collectionOwner(id))) c.name = KEPT_NAME;
         }
@@ -183,7 +185,7 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
     for (const [id, c] of Object.entries(collections)) {
         const rules = access.get(id);
         if (rules) { c.see = rules.see; c.add = rules.add; }
-        if (!inAudience(c.see, me, c.owner, identity)) { delete collections[id]; continue; }
+        if (!inAudience(c.see, me, c.owner, identity) && !(options.admin && isKept(id))) { delete collections[id]; continue; }
         c.mayAdd = inAudience(c.add, me, c.owner, identity);
     }
 

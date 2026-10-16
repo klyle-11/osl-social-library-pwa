@@ -5,6 +5,7 @@ import {
 import { mergeOps } from "./merge";
 import { makeBundle, readBundle, type Bundle } from "./bundle";
 import { rememberCursor } from "./cursor";
+import { isKept } from "./access";
 import type { Access, CollectionId, Conflict, DescribeField, DocumentProperties, Op, OpContext, OpId } from "./types";
 
 // One interface, one implementation per shell:
@@ -377,10 +378,15 @@ export class LibraryStore {
 
 // Collections whose latest access setting isn't "everyone can see". The node keeps their
 // ops at the library and sends them only to the people they're for.
+// Kept is restricted until its owner opens it up.
 export function restrictedCollections(ops: Op[]): Set<CollectionId> {
     const latest = new Map<CollectionId, { timestamp: string, see: string }>();
     for (const op of ops) {
-        if (op.type !== "collection-access") continue;
+        if (!("collectionId" in op)) continue;
+        if (op.type !== "collection-access") {
+            if (!latest.has(op.collectionId)) latest.set(op.collectionId, { timestamp: "", see: isKept(op.collectionId) ? "owner" : "everyone" });
+            continue;
+        }
         const was = latest.get(op.collectionId);
         if (!was || op.timestamp >= was.timestamp) latest.set(op.collectionId, op);
     }
