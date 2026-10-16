@@ -1,8 +1,9 @@
 import { presence, views, viewer } from "../state";
-import { displayName, formatLabel, mediumLabel, when } from "../format";
+import { displayName, fileKind, fileUrl, formatLabel, mediumLabel, when } from "../format";
 import { href } from "../route";
 import { KeepButton } from "./KeepButton";
 import { Thumbnail } from "./Thumbnail";
+import { AudioButtons } from "./AudioBar";
 
 export function DocumentCard({ id, onRemove }: { id: string, onRemove?: () => void }) {
     const v = views.value;
@@ -32,6 +33,7 @@ export function DocumentCard({ id, onRemove }: { id: string, onRemove?: () => vo
                     </p>
                 )}
             </a>
+            {fileKind(doc.fileType) === "audio" && fileUrl(doc) && <AudioButtons id={id} />}
             <KeepButton id={id} />
             {onRemove && <button class="document-card__remove" type="button" onClick={onRemove}>Remove</button>}
         </article>

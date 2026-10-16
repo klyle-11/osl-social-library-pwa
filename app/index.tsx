@@ -10,6 +10,8 @@ import { persistStorage } from "../adapters/carry";
 import { TransportContext, opLog, pending, stewards, tell, tokens, viewer } from "./state";
 import { startCarrying, startSync } from "./sync";
 import { startTheme } from "./theme";
+import { startPlayer } from "./player";
+import { views } from "./state";
 import { Library } from "./components/Library";
 
 declare const OSL_DEV: boolean;   // true only in `npm run dev`; the check is removed from production builds
@@ -25,6 +27,7 @@ async function loadCatalog() {
 
 async function boot() {
     startTheme();
+    startPlayer(id => views.value.documents[id]);
     // this shell's adapters, best first. Nothing above this line of code knows which one it got.
     const storage: StorageAdapter = await IndexedDBStorage.open().catch(() =>
         LocalStorageStorage.available() ? new LocalStorageStorage() : new MemoryStorage());

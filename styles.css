@@ -143,7 +143,7 @@ button, .you__button, .sync-screen__button {
 button:hover:not(:disabled) { background-color: var(--mark-hover); border-color: var(--mark-hover); color: var(--mark-hover-ink); }
 button:disabled { opacity: 0.55; cursor: default; }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea {
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, textarea {
     width: 100%;
     min-height: var(--tap);
     padding: 0.5rem 0.75rem;
@@ -151,7 +151,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, tex
     border-radius: var(--radius);
     background: var(--bg);
 }
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover, select:hover, textarea:hover { border-color: var(--control-line); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):hover, select:hover, textarea:hover { border-color: var(--control-line); }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); }
 textarea { resize: vertical; }
 input[type="file"] { max-width: 100%; padding: 0.5rem 0; }
@@ -383,12 +383,12 @@ label { display: block; }
    lift that layer over the header while the reader fills the screen */
 .reader-open .single-document__stage { z-index: 20; }
 /* full screen: the notes float over the page, so the page scrolls on under them */
-.reader--full .reader__pdf { padding-bottom: calc(var(--notes-dock, 0px) + 2rem); }
-.reader--full .reader__foot { padding-bottom: calc(var(--notes-dock, 0px) + 1.5rem); }
+.reader--full .reader__pdf { padding-bottom: calc(var(--notes-dock, 0px) + var(--audio-bar, 0px) + 2rem); }
+.reader--full .reader__foot { padding-bottom: calc(var(--notes-dock, 0px) + var(--audio-bar, 0px) + 1.5rem); }
 
 /* the notes dock: along the bottom on phones, and under the full-screen reader anywhere */
 .notes-dock {
-    display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+    display: none; position: fixed; left: 0; right: 0; bottom: var(--audio-bar, 0px); z-index: 55;
     background: var(--surface); border-top: 1px solid var(--rule);
     padding: 0.35rem 1rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
     box-shadow: 0 -2px 8px rgb(0 0 0 / 0.08);
@@ -401,7 +401,7 @@ label { display: block; }
 .reader-open .notes-dock {
     display: block; left: 50%; right: auto; transform: translateX(-50%);
     width: 70vw; min-width: min(calc(100vw - 2rem), 22rem);
-    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(1rem + var(--audio-bar, 0px) + env(safe-area-inset-bottom, 0px));
     padding: 0.35rem 1rem 0.6rem;
     border: 1px solid var(--rule); border-radius: max(var(--radius), 6px);
     box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.25);
@@ -658,3 +658,94 @@ label { display: block; }
 
 .you__export { display: inline-flex; align-items: center; text-decoration: none; }
 .you__export-off { color: var(--muted); }
+
+/* ---------- the audio player along the bottom, on every page ---------- */
+
+.library--player { padding-bottom: var(--audio-bar, 3.75rem); }
+.icon { width: 1.25rem; height: 1.25rem; fill: currentColor; flex: none; }
+
+.audio-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 56;   /* over the full-screen reader, beside the notes dock */
+    background: var(--bg); border-top: 1px solid var(--rule);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+.audio-bar__main {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.5rem;
+    max-width: var(--page); margin: 0 auto; padding: 0 0.5rem; min-height: var(--tap);
+}
+.audio-bar__buttons { display: flex; align-items: center; }
+.audio-bar__button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.15rem;
+    min-width: var(--tap); min-height: var(--tap); padding: 0 0.4rem;
+    border: 0; background: none; color: var(--text);
+}
+.audio-bar__button:hover { color: var(--accent); }
+.audio-bar__button--play { color: var(--on-primary); background: var(--primary); border-radius: 50%; min-width: 2.25rem; min-height: 2.25rem; width: 2.25rem; height: 2.25rem; padding: 0; margin: 0 0.15rem; }
+.audio-bar__button--play:hover { color: var(--on-primary); background: var(--primary); outline: 2px solid var(--accent); }
+.audio-bar__button--wide-only { display: none; }
+.audio-bar__step { font-size: 0.6875rem; font-weight: 700; }
+.audio-bar__now { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
+.audio-bar__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 0.9375rem; color: var(--text); text-decoration: none; }
+.audio-bar__title:hover { text-decoration: underline; color: var(--text); }
+.audio-bar__time { font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.audio-bar__time--failed { color: var(--warn); white-space: normal; }
+/* the seek line: 3px drawn along the top edge, a 1.25rem strip to drag */
+.audio-bar__seek {
+    position: absolute; left: 0; right: 0; top: -0.625rem; width: 100%; height: 1.25rem; margin: 0;
+    -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer;
+    min-height: 0; padding: 0; border: 0; border-radius: 0;   /* not the form inputs' 44px box */
+}
+.audio-bar__seek:disabled { cursor: default; }
+.audio-bar__seek::-webkit-slider-runnable-track {
+    height: 3px; background: linear-gradient(to right, var(--primary) var(--done, 0%), var(--line) var(--done, 0%));
+}
+.audio-bar__seek::-moz-range-track { height: 3px; background: var(--line); }
+.audio-bar__seek::-moz-range-progress { height: 3px; background: var(--primary); }
+.audio-bar__seek::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 0.75rem; height: 0.75rem; margin-top: -0.28rem; border-radius: 50%; background: var(--primary); border: 0;
+}
+.audio-bar__seek::-moz-range-thumb { width: 0.75rem; height: 0.75rem; border-radius: 50%; background: var(--primary); border: 0; }
+.audio-bar__seek:disabled::-webkit-slider-thumb { visibility: hidden; }
+.audio-bar__seek:focus-visible { outline: none; }
+.audio-bar__seek:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--focus); }
+.audio-bar__button--queue { position: relative; gap: 0.3rem; }
+.audio-bar__count { font-size: 0.75rem; font-weight: 700; }
+.audio-bar__label { display: none; font-size: 0.875rem; }
+@media (min-width: 40rem) {
+    .audio-bar__button--wide-only, .audio-bar__label { display: inline-flex; }
+    .audio-bar__main { gap: 1rem; padding: 0 1rem; }
+}
+
+.audio-bar__queue {
+    position: absolute; right: 0.5rem; bottom: calc(100% + 0.25rem); width: min(26rem, calc(100vw - 1rem));
+    max-height: min(60vh, 32rem); overflow: auto;
+    background: var(--bg); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.audio-bar__queue:focus { outline: none; }
+.audio-bar__queue-head {
+    position: sticky; top: 0; display: flex; align-items: center; gap: 0.25rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.9rem; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.audio-bar__queue-title { flex: 1; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.audio-bar__text-button { min-height: 2.25rem; border: 0; background: none; text-decoration: underline; padding: 0 0.5rem; }
+.audio-bar__queue-list { display: grid; }
+.audio-bar__queue-item { display: flex; align-items: center; gap: 0.25rem; border-bottom: 1px solid var(--line); }
+.audio-bar__queue-item--current { box-shadow: inset 3px 0 0 var(--accent); }
+.audio-bar__queue-play {
+    flex: 1; min-width: 0; display: grid; text-align: left; min-height: var(--tap); padding: 0.4rem 0.5rem 0.4rem 0.9rem;
+    border: 0; background: none;
+}
+.audio-bar__queue-item--current .audio-bar__queue-name { font-weight: 700; }
+.audio-bar__queue-name, .audio-bar__queue-author { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-bar__queue-author { font-size: 0.8125rem; color: var(--muted); }
+.audio-bar__queue-tools { display: flex; padding-right: 0.25rem; }
+.audio-bar__small { min-width: 2.25rem; min-height: 2.25rem; padding: 0; border: 0; background: none; font-size: 1rem; }
+.audio-bar__small:disabled { opacity: 0.3; }
+
+/* Play and Add to queue, on a card or in the reader */
+.audio-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; align-self: flex-start; margin-bottom: 0.4rem; }
+.audio-buttons button { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.25rem; padding: 0.2rem 0.7rem; font-size: 0.875rem; }
+.audio-buttons__play { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+.audio-buttons--large button { min-height: var(--tap); padding: 0.5rem 1rem; font-size: 1rem; }
+.document-viewer--audio { display: grid; gap: 0.75rem; justify-items: start; padding: 2rem 1.25rem; }
+.document-viewer__audio-title { font-size: 1.25rem; font-weight: 700; }

@@ -15,6 +15,8 @@ import { SyncScreen } from "./SyncScreen";
 import { DropPoints } from "./DropPoints";
 import { Suggest, Suggestions, sendWaitingSuggestions } from "./Suggest";
 import { Present } from "./Present";
+import { AudioBar } from "./AudioBar";
+import { queue } from "../player";
 
 // Root: provides the store to everything below, and switches views on the route.
 export function Library({ store }: { store: LibraryStore }) {
@@ -29,7 +31,7 @@ export function Library({ store }: { store: LibraryStore }) {
     }
     return (
         <LibraryContext.Provider value={store}>
-            <div class="library">
+            <div class={`library${queue.value.length ? " library--player" : ""}`}>
                 <Header />
                 {notice.value && (
                     <p class={`library__notice${notice.value.error ? " library__notice--error" : ""}`} role={notice.value.error ? "alert" : "status"}>
@@ -51,6 +53,7 @@ export function Library({ store }: { store: LibraryStore }) {
                     {r.view === "suggest" && <Suggest />}
                     {r.view === "suggestions" && <Suggestions />}
                 </main>
+                <AudioBar />
             </div>
         </LibraryContext.Provider>
     );

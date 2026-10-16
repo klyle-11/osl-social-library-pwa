@@ -6,6 +6,8 @@ import { PdfReader } from "./PdfReader";
 import { EpubReader } from "./EpubReader";
 import { useThumbnailBackfill } from "./reader";
 import { videoThumbnail } from "../thumbnails";
+import { AudioButtons } from "./AudioBar";
+import { clock, duration, nowPlaying, position } from "../player";
 
 // Shows the document itself, by kind. Mostly plain browser elements (img, audio,
 // video) so it keeps working offline once carried; PDFs and EPUBs get a reader.
@@ -26,13 +28,28 @@ export function DocumentViewer({ doc }: { doc: LibraryDocument }) {
     if (!url) return null;
     // plain text, markdown, csv… shown as text; a web page someone uploaded is only a download
     if (t.startsWith("text/") && t !== "text/html") return <TextViewer url={url} />;
-    if (t.startsWith("audio/")) return <div class="document-viewer document-viewer--audio"><audio class="document-viewer__audio" src={url} controls preload="metadata" /></div>;
+    if (t.startsWith("audio/")) return <AudioViewer doc={doc} />;
     if (t.startsWith("video/")) return <VideoViewer key={url} url={url} docId={doc.id} />;
     if (t === "application/pdf") return <PdfReader key={url} url={url} docId={doc.id} />;
     if (t === "application/epub+zip") return <EpubReader key={url} url={url} docId={doc.id} />;
     return (
         <div class="document-viewer document-viewer--file">
             <a class="document-viewer__open" href={url} download>Download file</a>
+        </div>
+    );
+}
+
+// A recording plays in the player along the bottom, so it keeps going while people look around.
+function AudioViewer({ doc }: { doc: LibraryDocument }) {
+    const here = nowPlaying.value === doc.id;
+    return (
+        <div class="document-viewer document-viewer--audio">
+            <p class="document-viewer__audio-title">{doc.properties.title}</p>
+            <AudioButtons id={doc.id} large />
+            <p class="document-viewer__note">
+                {here ? `${clock(position.value)}${duration.value ? ` of ${clock(duration.value)}` : ""} · playing along the bottom of the screen`
+                    : "It plays along the bottom of the screen, and keeps playing while you look around."}
+            </p>
         </div>
     );
 }
