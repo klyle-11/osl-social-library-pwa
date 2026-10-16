@@ -12,6 +12,7 @@
 
 #include <Arduino.h>
 #include <DNSServer.h>
+#include <ESPmDNS.h>
 #include <LittleFS.h>
 #include <WiFi.h>
 
@@ -220,7 +221,11 @@ void setup() {
     IPAddress ip;
     if (ip.fromString(LIBRARY_ADDRESS)) WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
     else Serial.println("LIBRARY_ADDRESS in config.h is not an IP address");
-    address = String("http://") + LIBRARY_ADDRESS;
+    // phones look up a .local name by asking the network (mDNS), not the DNS server
+    // below: answer as the library's name too, so http://osl.local opens here as at the Pi
+    if (MDNS.begin(LIBRARY_NAME)) MDNS.addService("http", "tcp", LIBRARY_PORT);
+    else Serial.println("mDNS failed to start: phones will need the address in numbers");
+    address = String("http://") + LIBRARY_NAME + ".local";
     if (LIBRARY_PORT != 80) {
         address += ':';
         address += String(LIBRARY_PORT);

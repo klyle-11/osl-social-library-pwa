@@ -3,6 +3,7 @@ import { KEPT_NAME } from "../../core/views";
 import { attempt, useLibrary, views, viewer } from "../state";
 import { displayName } from "../format";
 import { DocumentCard } from "./DocumentCard";
+import { canCarry } from "../../adapters/carry";
 
 export function Collection({ id }: { id: string }) {
     const store = useLibrary();
@@ -34,14 +35,16 @@ export function Collection({ id }: { id: string }) {
                         <button class="collection__rename-cancel" type="button" onClick={() => setEditing(false)}>Cancel</button>
                     </form>
                 ) : (
-                    <h2 class="collection__title">{c.name ?? "Untitled collection"}</h2>
+                    <h2 class="collection__title"><span class="mark">{c.name ?? "Untitled collection"}</span></h2>
                 )}
-                <p class="collection__by">by {displayName(c.owner, v.names, me)} · {c.documentIds.length} documents</p>
+                <p class="collection__by">by <span class="mark">{displayName(c.owner, v.names, me)}</span> · {c.documentIds.length} documents</p>
                 {renamable && !editing && (
                     <button class="collection__rename-open" type="button"
                         onClick={() => { setName(c.name ?? ""); setEditing(true); }}>{c.name ? "Rename" : "Name it"}</button>
                 )}
-                {mine && <p class="collection__carry">{c.name === KEPT_NAME ? "Everything you keep" : "Everything here"} is saved on this phone for offline use.</p>}
+                {mine && (canCarry()
+                    ? <p class="collection__carry">{c.name === KEPT_NAME ? "Everything you keep" : "Everything here"} is saved on this phone for offline use.</p>
+                    : <p class="collection__carry">Kept in your collection, which everyone can see. Saving copies on this phone for offline use needs the library's secure address (https), which comes with the domain.</p>)}
             </header>
 
             {c.documentIds.length ? (

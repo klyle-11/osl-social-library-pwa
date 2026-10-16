@@ -3,8 +3,11 @@ import type { LibraryStore } from "../core/store";
 import type { HttpTransport } from "../adapters/http-transport";
 import { carry } from "../adapters/carry";
 import { fileUrl } from "./format";
+import { thumbnailUrl } from "./components/Thumbnail";
 import { href, route } from "./route";
 import { follow, lastSync, nodeRole, paused, pending, presence, relayed, syncState, views, viewer } from "./state";
+
+declare const OSL_PDFJS: string;
 
 // How often an open, visible app asks the node what's new. Short enough that a
 // note appears on the big screen while people are still looking at it.
@@ -89,14 +92,20 @@ export function startCarrying() {
         const v = views.value;
         const me = viewer.value;
         const urls = new Set<string>();
+        let pdfs = false;
         for (const c of Object.values(v.collections)) {
             if (c.owner !== me) continue;
             for (const id of c.documentIds) {
                 const doc = v.documents[id];
                 const url = doc && fileUrl(doc);
                 if (url) urls.add(url);
+                const thumb = doc && thumbnailUrl(doc);
+                if (thumb) urls.add(thumb);
+                if (doc?.fileType === "application/pdf") pdfs = true;
             }
         }
+        // a carried PDF needs its reader too (the fonts and decoders come from the library when it can)
+        if (pdfs) for (const f of ["pdf.min.mjs", "pdf.worker.min.mjs"]) urls.add(OSL_PDFJS + f);
         const key = [...urls].sort().join("\n");
         if (key === last) return;
         last = key;

@@ -5,6 +5,7 @@ import { readPresence } from "../core/presence";
 export type Role = "presenter" | "station";
 export type NodeInfo = { secure: boolean, addresses: string[], host: string };
 export type Uploaded = { hash: string, size: number, fileType: string };
+export type Suggestion = { kind: string, text: string, contact?: string, page?: string, device?: string, app?: string, via?: string };
 
 // What the library says about itself and every drop point it has heard (node/droppoints.ts).
 export type Signal = { rssi: number, snr: number };
@@ -119,14 +120,15 @@ export class HttpTransport implements Transport {
         await this.send("showing", { token, documentId, user });
     }
 
-    // Whole files from the digitization station. XMLHttpRequest because fetch
-    // can't report upload progress, and a film takes long enough to need it.
-    upload(file: File, token: string, onProgress: (fraction: number) => void): Promise<Uploaded> {
+    // Whole files, from any device; the station's token, when there is one, only
+    // labels it in the node's log. XMLHttpRequest because fetch can't report
+    // upload progress, and a film takes long enough to need it.
+    upload(file: File, token: string | null, onProgress: (fraction: number) => void): Promise<Uploaded> {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open("POST", this.base + "upload");
-            xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
-            xhr.setRequestHeader("x-osl-token", token);
+            xhr.setRequestHeader("content-type", fileTypeOf(file));
+            if (token) xhr.setRequestHeader("x-osl-token", token);
             xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
             xhr.onerror = () => reject(new Error("The upload was interrupted. Check the connection and try again."));
             xhr.onload = () => {
@@ -137,6 +139,18 @@ export class HttpTransport implements Transport {
             };
             xhr.send(file);
         });
+    }
+
+    // to the developer only: never part of the op log
+    async suggest(suggestion: Suggestion): Promise<void> {
+        await this.send("suggestions", suggestion);
+    }
+
+    async suggestions(key: string): Promise<(Suggestion & { id: string, receivedAt: string })[]> {
+        const res = await fetch(this.base + "suggestions", { headers: { "x-osl-key": key } });
+        const body = await res.json().catch(() => ({})) as { suggestions?: (Suggestion & { id: string, receivedAt: string })[], error?: string };
+        if (!res.ok) throw new Error(body.error ?? `suggestions: ${res.status}`);
+        return body.suggestions ?? [];
     }
 
     private async send(path: string, body: unknown): Promise<unknown> {
@@ -154,4 +168,12 @@ export class HttpTransport implements Transport {
         }
         return parsed;
     }
+}
+
+// Phones often leave an EPUB's type blank (and some send PDFs as octet-stream): go by the name.
+export function fileTypeOf(file: File): string {
+    const ext = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
+    if (ext === "epub") return "application/epub+zip";
+    if (ext === "pdf") return "application/pdf";
+    return file.type || "application/octet-stream";
 }

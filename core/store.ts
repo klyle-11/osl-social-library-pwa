@@ -118,8 +118,8 @@ export class LibraryStore {
         return this.commit(ctx => [createDocument(ctx, fields)]);
     }
 
-    annotate(documentId: OpId, body: string, access: Access): Promise<OpId> {
-        return this.commit(ctx => [createAnnotation(ctx, documentId, body, access)]);
+    annotate(documentId: OpId, body: string, access: Access, replyTo?: OpId): Promise<OpId> {
+        return this.commit(ctx => [createAnnotation(ctx, documentId, body, access, replyTo)]);
     }
 
     // one tap: into this person's "Kept" collection

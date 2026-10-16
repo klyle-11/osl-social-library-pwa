@@ -92,8 +92,8 @@ export function Present() {
                 <section class="present__notes" ref={notes}>
                     <h2 class="present__notes-title">{doc ? `Notes (${thread.length})` : "Latest"}</h2>
                     <ol class="present__notes-list">
-                        {doc && thread.map(({ op, anonymous }) => (
-                            <li class="present__note" key={op.id}>
+                        {doc && thread.map(({ op, anonymous, depth }) => (
+                            <li class={`present__note${depth ? " present__note--reply" : ""}`} key={op.id} style={{ marginLeft: `${Math.min(depth, 3) * 1.5}rem` }}>
                                 <p class="present__note-body">{op.body}</p>
                                 <p class="present__note-by">{anonymous ? "Someone" : displayName(op.user, v.names, "")} · {when(op.timestamp)}</p>
                             </li>

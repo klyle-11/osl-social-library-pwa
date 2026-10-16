@@ -34,6 +34,7 @@
   "dependencies": {
     "@preact/signals": "^2.11.2",
     "nodemon": "^3.1.14",
+    "pdfjs-dist": "6.3.289",
     "preact": "^10.29.8",
     "qrcode-generator": "^2.0.4"
   },

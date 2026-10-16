@@ -54,14 +54,16 @@
 // Phones keep their data per address (scheme, name and port), so a drop point must
 // answer at exactly the address phones use for the library, or it looks like a
 // different, empty app (README, W-D10).
-//   LIBRARY_HTTPS 0: before the domain. Plain http at the Pi's fixed address and port.
-//                    The drop point's own Wi-Fi network takes that address, so phones
-//                    joined to it reach the board where they'd reach the Pi.
+//   LIBRARY_HTTPS 0: before the domain. Plain http://LIBRARY_NAME.local, the Pi's name on
+//                    the network. The drop point answers that name too (mDNS) on its own
+//                    Wi-Fi, so phones joined to it reach the board where they'd reach the Pi.
+//                    Its network also takes LIBRARY_ADDRESS, for anyone typing numbers.
 //   LIBRARY_HTTPS 1: https://LIBRARY_DOMAIN on port 443, with the library's certificate
 //                    in flash (Gate three).
 #define LIBRARY_HTTPS 0
 #define LIBRARY_ADDRESS "192.168.1.50"   // the Pi's fixed address (a DHCP reservation on the router)
-#define LIBRARY_PORT 8080                // the port the node runs on (PORT, 8080 by default)
+#define LIBRARY_PORT 80                  // the port the node runs on (PORT=80 on the Pi: see README)
+#define LIBRARY_NAME "osl"               // the library's name on the network: http://osl.local, like the Pi
 #define LIBRARY_DOMAIN "library.example.org"
 
 // What the library calls this drop point in its list (You → Sync → Drop points).

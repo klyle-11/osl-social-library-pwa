@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { DescribeField } from "../../core/types";
-import { attempt, tell, useLibrary, views, viewer } from "../state";
+import { attempt, stewards, tell, useLibrary, views, viewer } from "../state";
+import { formatEditors, mayEdit, parseEditors, type Editors } from "../../core/views";
 import { MEDIUMS, displayName } from "../format";
 
 const FIELDS: { field: DescribeField, label: string, long?: boolean, max: number }[] = [
@@ -14,7 +15,30 @@ const FIELDS: { field: DescribeField, label: string, long?: boolean, max: number
 
 // Metadata is a contribution like any other. Saving sends one small op per
 // field that changed; nobody's earlier answer is erased, the latest is shown.
+// Who may change it is the uploader's choice (everyone, unless they say otherwise).
 export function DetailsForm({ id }: { id: string }) {
+    const v = views.value;
+    const me = viewer.value;
+    const doc = v.documents[id];
+    const owner = doc.user === me || stewards.value.includes(me);
+    if (!mayEdit(doc, me, stewards.value)) {
+        const who = displayName(doc.user, v.names, me);
+        const e = parseEditors(doc.properties.editors);
+        return (
+            <p class="details-form__locked">
+                {e?.kind === "people" ? `Only ${who} and the people they chose can change these details.` : `Only ${who} can change these details.`}
+            </p>
+        );
+    }
+    return (
+        <>
+            <DetailsFields id={id} />
+            {owner && <EditorsChooser id={id} />}
+        </>
+    );
+}
+
+function DetailsFields({ id }: { id: string }) {
     const store = useLibrary();
     const v = views.value;
     const me = viewer.value;
@@ -67,6 +91,60 @@ export function DetailsForm({ id }: { id: string }) {
             <button class="details-form__save" type="submit" disabled={!count}>
                 {count ? `Save ${count} change${count === 1 ? "" : "s"}` : "Nothing changed"}
             </button>
+        </form>
+    );
+}
+
+// The uploader's switch: everyone, only them, or people they pick. Changeable any time;
+// edits already made stay, and from then on only the chosen people's count.
+function EditorsChooser({ id }: { id: string }) {
+    const store = useLibrary();
+    const v = views.value;
+    const me = viewer.value;
+    const doc = v.documents[id];
+    const current = parseEditors(doc.properties.editors) ?? { kind: "everyone" as const };
+    const [choice, setChoice] = useState<Editors>(current);
+    useEffect(() => setChoice(current), [id, doc.properties.editors]);
+    const candidates = v.people.filter(u => u !== doc.user && u !== "steward");
+    const chosen = choice.kind === "people" ? choice.users : [];
+    const changed = formatEditors(choice) !== formatEditors(current);
+
+    const pick = (kind: Editors["kind"]) => setChoice(kind === "people" ? { kind, users: chosen } : { kind });
+    const toggle = (u: string) => setChoice({ kind: "people", users: chosen.includes(u) ? chosen.filter(x => x !== u) : [...chosen, u] });
+
+    return (
+        <form class="editors" onSubmit={e => {
+            e.preventDefault();
+            if (!changed) return;
+            attempt(async () => {
+                await store.describe(id, { editors: formatEditors(choice) });
+                tell(choice.kind === "everyone" ? "Anyone can change the details now." : choice.kind === "owner" ? "Only you can change the details now." : "Only you and the people you chose can change the details now.");
+            });
+        }}>
+            <fieldset class="editors__set">
+                <legend class="editors__legend">Who can change these details</legend>
+                {([["everyone", "Everyone"], ["owner", doc.user === me ? "Only me" : `Only ${displayName(doc.user, v.names, me)}`], ["people", "People I choose"]] as [Editors["kind"], string][]).map(([kind, label]) => (
+                    <label class="editors__option" key={kind}>
+                        <input type="radio" name={`editors-${id}`} checked={choice.kind === kind} onChange={() => pick(kind)} /> {label}
+                    </label>
+                ))}
+                {choice.kind === "people" && (
+                    candidates.length ? (
+                        <ul class="editors__people">
+                            {candidates.map(u => (
+                                <li key={u}>
+                                    <label class="editors__person">
+                                        <input type="checkbox" checked={chosen.includes(u)} onChange={() => toggle(u)} /> {displayName(u, v.names, me)}
+                                        <span class="editors__device"> · device {u.replace(/^d-/, "").slice(0, 8)}</span>
+                                    </label>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : <p class="editors__none">Nobody else has used the library yet. People appear here once they've added, noted or kept something.</p>
+                )}
+                <p class="editors__note">The library's stewards can always change them. Edits already made stay.</p>
+            </fieldset>
+            <button class="editors__save" type="submit" disabled={!changed}>{changed ? "Save who can edit" : "Saved"}</button>
         </form>
     );
 }

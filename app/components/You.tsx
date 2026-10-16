@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Role } from "../../adapters/http-transport";
 import { remember } from "../../adapters/device";
-import { attempt, syncState, tell, tokens, useLibrary, useTransport, views, viewer } from "../state";
+import { attempt, syncState, tell, tokens, useLibrary, useTransport, views, viewer, nodeRole } from "../state";
 import { href } from "../route";
 import { canCarry, carried } from "../../adapters/carry";
 import { fileUrl } from "../format";
@@ -55,6 +55,18 @@ export function You() {
                         });
                     }} />
                 </label>
+            </section>
+
+            <section class="you__section">
+                <h3 class="you__heading">Export the library</h3>
+                <p class="you__text">
+                    Everything at the library in one zip: every document and its file, every note and reply,
+                    every detail and collection, from everyone, kept or not. Notes people kept private aren't
+                    in it (they never leave their phones).
+                </p>
+                {nodeRole.value === "library" && syncState.value === "synced"
+                    ? <a class="you__button you__export" href="api/export" download>Export everything (.zip)</a>
+                    : <p class="you__text you__export-off">Connect to the library's Wi-Fi to export it.</p>}
             </section>
 
             <Appearance />
@@ -141,7 +153,7 @@ async function saveBundle(bundle: unknown) {
 }
 
 // A code shown on the library's own screen turns this device into the presenter
-// (chooses what's on the big screen) or the digitization station (uploads files).
+// (chooses what's on the big screen) or the digitization station (its photos upload at full size).
 function Pairing() {
     const transport = useTransport();
     const [code, setCode] = useState("");
@@ -179,7 +191,7 @@ function Pairing() {
                     Pair as
                     <select class="you__pair-input" value={role} onChange={e => setRole((e.currentTarget as HTMLSelectElement).value as Role)}>
                         <option value="presenter">Presenter (the big screen)</option>
-                        <option value="station">Digitization station (uploads)</option>
+                        <option value="station">Digitization station (photos at full size)</option>
                     </select>
                 </label>
                 <button class="you__button" type="submit">Pair</button>

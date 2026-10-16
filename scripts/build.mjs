@@ -39,10 +39,24 @@ function copyLibrary() {
     if (existsSync("library/files")) cpSync("library/files", "dist/library/files", { recursive: true });
 }
 
+// pdf.js for the PDF reader, fetched only when someone opens a PDF. The version is in
+// the path so a phone that carried an old copy never mixes it with a new app.
+const PDFJS_SRC = "node_modules/pdfjs-dist";
+const PDFJS = `vendor/pdfjs-${JSON.parse(readFileSync(`${PDFJS_SRC}/package.json`, "utf8")).version}/`;
+function copyPdfjs() {
+    // the legacy build: phones a few years old are welcome at the library
+    for (const f of ["pdf.min.mjs", "pdf.worker.min.mjs"]) cpSync(`${PDFJS_SRC}/legacy/build/${f}`, `dist/${PDFJS}${f}`);
+    for (const d of ["cmaps", "standard_fonts", "iccs"]) cpSync(`${PDFJS_SRC}/${d}`, `dist/${PDFJS}${d}`, { recursive: true });
+    // image decoders for scanned PDFs (JPEG 2000, JBIG2) and colour profiles; not the JavaScript engine, scripts in PDFs never run
+    cpSync(`${PDFJS_SRC}/wasm`, `dist/${PDFJS}wasm`, { recursive: true, filter: src => !src.includes("quickjs") });
+    cpSync(`${PDFJS_SRC}/LICENSE`, `dist/${PDFJS}LICENSE`);
+}
+
 copyStatic();
 copyLibrary();
+copyPdfjs();
 
-const define = { OSL_DEV: JSON.stringify(watch) };
+const define = { OSL_DEV: JSON.stringify(watch), OSL_PDFJS: JSON.stringify(PDFJS) };
 const app = {
     entryPoints: ["app/index.tsx"], bundle: true, outfile: "dist/app.js",
     format: "esm", target: "es2020", minify: !watch, sourcemap: true, logLevel: "info", define

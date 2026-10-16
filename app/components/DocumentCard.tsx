@@ -1,5 +1,5 @@
 import { presence, views, viewer } from "../state";
-import { mediumLabel } from "../format";
+import { displayName, formatLabel, mediumLabel, when } from "../format";
 import { href } from "../route";
 import { KeepButton } from "./KeepButton";
 import { Thumbnail } from "./Thumbnail";
@@ -16,11 +16,14 @@ export function DocumentCard({ id, onRemove }: { id: string, onRemove?: () => vo
         <article class={`document-card${onScreen ? " document-card--on-screen" : ""}`}>
             <a class="document-card__link" href={href({ view: "document", id })}>
                 <Thumbnail doc={doc} modifier="card" />
-                <h3 class="document-card__title">{p.title}</h3>
-                {p.author && <p class="document-card__author">{p.author}</p>}
+                <h3 class="document-card__title"><span class="mark">{p.title}</span></h3>
+                {p.author && <p class="document-card__author"><span class="mark">{p.author}</span></p>}
                 <p class="document-card__meta">
-                    {[mediumLabel(p.type), p.year].filter(Boolean).join(" · ")}
+                    {[p.type && mediumLabel(p.type), formatLabel(doc.fileType), p.year].filter(Boolean).join(" · ")}
                     {notes > 0 && ` · ${notes} note${notes === 1 ? "" : "s"}`}
+                </p>
+                <p class="document-card__added">
+                    Added by <span class="mark">{displayName(doc.user, v.names, viewer.value)}</span> · <time dateTime={doc.timestamp}>{when(doc.timestamp)}</time>
                 </p>
                 {(onScreen || viewing > 0) && (
                     <p class="document-card__live">

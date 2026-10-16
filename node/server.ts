@@ -6,10 +6,10 @@ import { createServer as createHttp, type IncomingMessage, type ServerResponse }
 import { createServer as createHttps } from "node:https";
 import {
     existsSync, mkdirSync, readFileSync, appendFileSync, writeFileSync, statSync, createReadStream,
-    createWriteStream, renameSync, rmSync, openSync, writeSync, fsyncSync
+    createWriteStream, renameSync, rmSync, openSync, writeSync, fsyncSync, readSync, closeSync
 } from "node:fs";
-import { createHash, randomBytes, randomInt } from "node:crypto";
-import { networkInterfaces } from "node:os";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { hostname, networkInterfaces } from "node:os";
 import { createServer as createNetServer } from "node:net";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { validateOp } from "../core/ops";
@@ -19,6 +19,7 @@ import { PresenceBoard } from "../core/presence";
 import { positionFor } from "../core/cursor";
 import { startRadio, type Bridge } from "./radio";
 import { DropPointRegister } from "./droppoints";
+import { exportEntries, sendZip } from "./export";
 import type { Op } from "../core/types";
 
 const ROOT = resolve(process.env.OSL_ROOT ?? ".");
@@ -31,6 +32,13 @@ const PORT = Number(process.env.PORT ?? 8080);
 const MAX_BODY = 8 * 1024 * 1024;
 const MAX_UPLOAD = Number(process.env.OSL_MAX_UPLOAD ?? 2 * 1024 * 1024 * 1024);
 const TOKENS = join(DATA, "tokens.json");
+// Suggestions and user-testing notes: for the developer only. They never enter the op
+// log (which every phone gets), so nothing on the site shows them; this file and the
+// Suggestions page, which asks for the key below, are the only ways to read them.
+const SUGGESTIONS = join(DATA, "suggestions.jsonl");
+const SUGGESTIONS_KEY_FILE = join(DATA, "suggestions-key");
+const SUGGESTIONS_MAX_FILE = 20 * 1024 * 1024;
+const SUGGESTION_KINDS = ["broken", "confusing", "idea", "testing", "other"];
 const LOG_ID_FILE = join(DATA, "log-id");
 const DEV = process.env.OSL_DEV === "1";
 
@@ -186,7 +194,7 @@ const TYPES: Record<string, string> = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
     ".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".md": "text/plain; charset=utf-8",
     ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".mp4": "video/mp4", ".webm": "video/webm",
-    ".epub": "application/epub+zip"
+    ".epub": "application/epub+zip", ".wasm": "application/wasm", ".bcmap": "application/octet-stream", ".pfb": "application/octet-stream"
 };
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -254,11 +262,23 @@ function serveFile(req: IncomingMessage, res: ServerResponse, file: string, extr
     sendFile(req, res, file, TYPES[extname(file).toLowerCase()] ?? "application/octet-stream", extraHeaders);
 }
 
-const UPLOADABLE = /^(audio|video|image)\/[\w.+-]+$|^application\/(pdf|epub\+zip)$|^text\/plain$/;
+// Anyone can upload any kind of file. A type only has to be well formed: it's
+// stored next to the file and sent back as its content-type.
+const MIME = /^[a-z0-9][\w.+-]*\/[\w.+-]+$/;
+// The types that open in the browser. Everything else is served as a download.
+// SVG isn't here: it can carry scripts.
+const INLINE = /^(audio|video)\/|^image\/(jpeg|png|gif|webp|avif|heic|heif|bmp)$|^application\/(pdf|epub\+zip)$|^text\/plain$/;
+// the reader opens these, so they must be what they say: a PDF's header may sit
+// a little way in, an EPUB is a zip
+const LOOKS: Record<string, (head: Buffer) => boolean> = {
+    "application/pdf": head => head.includes("%PDF-"),
+    "application/epub+zip": head => head.subarray(0, 4).equals(Buffer.from("PK\x03\x04", "latin1"))
+};
 
-// The digitization station sends whole files (scans, audio, video). The bytes go
-// straight to disk and are hashed on the way past, so a large film never sits in memory.
-function receiveUpload(req: IncomingMessage, type: string): Promise<{ hash: string, size: number }> {
+// Whole files, from anyone: the digitization station's scans and films, and whatever
+// people bring. The bytes go straight to disk and are hashed on the way past, so a
+// large film never sits in memory.
+function receiveUpload(req: IncomingMessage, type: string, limit = MAX_UPLOAD, looksRight?: (head: Buffer) => boolean): Promise<{ hash: string, size: number }> {
     return new Promise((ok, fail) => {
         const temp = join(MEDIA, `.upload-${randomBytes(6).toString("hex")}`);
         const out = createWriteStream(temp);
@@ -267,14 +287,15 @@ function receiveUpload(req: IncomingMessage, type: string): Promise<{ hash: stri
         const abandon = (e: Error) => { out.destroy(); rmSync(temp, { force: true }); fail(e); };
         req.on("data", (c: Buffer) => {
             size += c.length;
-            if (size > MAX_UPLOAD) { req.destroy(); abandon(new Error("file is too large for this node")); return; }
+            if (size > limit) { req.destroy(); abandon(new ClientError(413, tooLarge(limit))); return; }
             digest.update(c);
         });
         req.on("error", abandon);
         req.on("aborted", () => abandon(new Error("upload was interrupted")));
         out.on("error", abandon);
         out.on("finish", () => {
-            if (!size) return abandon(new Error("empty file"));
+            if (!size) return abandon(new ClientError(400, "empty file"));
+            if (looksRight && !looksRight(readHead(temp))) return abandon(new ClientError(415, `That file isn't a ${type === "application/pdf" ? "PDF" : "EPUB"} inside.`));
             const hash = "sha256-" + digest.digest("hex");
             renameSync(temp, join(MEDIA, hash));     // same bytes, same name: uploading twice is harmless
             writeFileSync(join(MEDIA, hash + ".type"), type);
@@ -282,6 +303,36 @@ function receiveUpload(req: IncomingMessage, type: string): Promise<{ hash: stri
         });
         req.pipe(out);
     });
+}
+
+function readHead(file: string): Buffer {
+    const fd = openSync(file, "r");
+    try {
+        const head = Buffer.alloc(1024);
+        return head.subarray(0, readSync(fd, head, 0, head.length, 0));
+    } finally {
+        closeSync(fd);
+    }
+}
+
+function tooLarge(limit: number): string {
+    return `That file is too large for this library (the most it takes is ${Math.round(limit / 1024 / 1024)} MB).`;
+}
+
+// The address to give people: the machine's own name on the network (a Pi named
+// "osl" is osl.local, which phones find without DNS), then its IP addresses.
+// The port is left off when it's the scheme's own.
+function joinAddresses(scheme: string): string[] {
+    const port = PORT === (scheme === "https" ? 443 : 80) ? "" : `:${PORT}`;
+    const name = hostname().split(".")[0].toLowerCase();
+    const named = /^[a-z0-9-]+$/.test(name) && name !== "localhost" ? [`${scheme}://${name}.local${port}`] : [];
+    return [...named, ...localAddresses().map(a => `${scheme}://${a}${port}`)];
+}
+
+// made once, kept in data/: the developer's key to the suggestions page
+function suggestionsKey(): string {
+    if (!existsSync(SUGGESTIONS_KEY_FILE)) writeFileSync(SUGGESTIONS_KEY_FILE, randomBytes(12).toString("base64url"), { mode: 0o600 });
+    return readFileSync(SUGGESTIONS_KEY_FILE, "utf8").trim();
 }
 
 function localAddresses(): string[] {
@@ -341,11 +392,31 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, radio ? radio.status() : { radio: "off", how: "start the node with RADIO_PORT set to the modem's serial device" });
     }
 
+    // the whole library as one zip, for anyone who wants a copy (You → Export the library)
+    if (path === "/api/export") {
+        const catalog = existsSync(join(STATIC, "catalog.json"))
+            ? JSON.parse(readFileSync(join(STATIC, "catalog.json"), "utf8")) as { stewards?: string[], ops?: Op[] }
+            : {};
+        const ops = [...(catalog.ops ?? []), ...log];
+        const fileFor = (doc: { hash?: string, url?: string }) => {
+            if (doc.url && !/^[a-z]+:/i.test(doc.url)) {
+                const f = join(STATIC, normalize(doc.url).replace(/^([/\\])+/, ""));
+                if (f.startsWith(STATIC + sep) && existsSync(f)) return f;
+            }
+            if (doc.hash && HASH.test(doc.hash) && existsSync(join(MEDIA, doc.hash))) return join(MEDIA, doc.hash);
+            return null;
+        };
+        const day = new Date().toISOString().slice(0, 10);
+        console.log(`export: ${ops.length} ops`);
+        await sendZip(res, `osl-library-${day}.zip`, exportEntries(ops, catalog.stewards ?? [], fileFor, appVersion() || "?"));
+        return;
+    }
+
     if (path === "/api/info") {
         const scheme = secure ? "https" : "http";
         return json(res, 200, {
             secure,
-            addresses: localAddresses().map(a => `${scheme}://${a}:${PORT}`),
+            addresses: joinAddresses(scheme),
             host: req.headers.host ?? ""
         });
     }
@@ -357,6 +428,41 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const user = (url.searchParams.get("user") ?? "").slice(0, 64);
         if (user) board.hello(user, (url.searchParams.get("viewing") ?? "").slice(0, 200), Date.now());
         return json(res, 200, { ops: log.slice(after), cursor: cursorNow(), presence: board.snapshot(Date.now()), node: NODE });
+    }
+
+    if (path === "/api/suggestions" && req.method === "POST") {
+        const body = await readBody(req);
+        const text = typeof body.text === "string" ? body.text.trim() : "";
+        if (!text) return json(res, 400, { error: "Write something first." });
+        const field = (k: string, max: number) => typeof body[k] === "string" ? (body[k] as string).trim().slice(0, max) : "";
+        const entry = {
+            id: randomBytes(6).toString("hex"),
+            receivedAt: new Date().toISOString(),
+            kind: SUGGESTION_KINDS.includes(body.kind as string) ? body.kind : "other",
+            text: text.slice(0, 5000),
+            contact: field("contact", 200),
+            page: field("page", 300),
+            device: field("device", 500),
+            app: field("app", 40),
+            via: field("via", 20)          // "library", or "drop point" if it waited on the phone
+        };
+        if (existsSync(SUGGESTIONS) && statSync(SUGGESTIONS).size > SUGGESTIONS_MAX_FILE) {
+            return json(res, 507, { error: "The suggestions box is full. Tell the developer in person, please." });
+        }
+        appendFileSync(SUGGESTIONS, JSON.stringify(entry) + "\n");
+        console.log(`suggestion received (${entry.kind}): ${entry.text.slice(0, 60).replace(/\s+/g, " ")}${entry.text.length > 60 ? "…" : ""}`);
+        return json(res, 200, { ok: true });
+    }
+    if (path === "/api/suggestions" && req.method === "GET") {
+        const key = String(req.headers["x-osl-key"] ?? "");
+        const want = suggestionsKey();
+        if (key.length !== want.length || !timingSafeEqual(Buffer.from(key), Buffer.from(want))) {
+            return json(res, 403, { error: "That isn't the key. It's printed in the node's console when it starts." });
+        }
+        const list = existsSync(SUGGESTIONS)
+            ? readFileSync(SUGGESTIONS, "utf8").split("\n").filter(Boolean).flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } }).reverse()
+            : [];
+        return json(res, 200, { suggestions: list });
     }
 
     if (path === "/api/pair" && req.method === "POST") {
@@ -387,15 +493,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (path === "/api/upload" && req.method === "POST") {
-        if (!hasRole(req.headers["x-osl-token"], "station")) {
-            req.resume();
-            return json(res, 403, { error: "This computer isn't paired as the digitization station." });
-        }
-        const type = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
-        if (!UPLOADABLE.test(type)) { req.resume(); return json(res, 415, { error: `The library doesn't take ${type || "that kind of"} files.` }); }
-        if (Number(req.headers["content-length"] ?? 0) > MAX_UPLOAD) { req.resume(); return json(res, 413, { error: "file is too large for this node" }); }
-        const saved = await receiveUpload(req, type);
-        console.log(`station uploaded ${saved.hash.slice(0, 15)}… (${saved.size} bytes, ${type})`);
+        const sent = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+        const type = MIME.test(sent) ? sent : "application/octet-stream";
+        const station = hasRole(req.headers["x-osl-token"], "station");
+        if (Number(req.headers["content-length"] ?? 0) > MAX_UPLOAD) { req.resume(); return json(res, 413, { error: tooLarge(MAX_UPLOAD) }); }
+        const saved = await receiveUpload(req, type, MAX_UPLOAD, LOOKS[type]);
+        console.log(`${station ? "station" : "a device"} uploaded ${saved.hash.slice(0, 15)}… (${saved.size} bytes, ${type})`);
         return json(res, 200, { ...saved, fileType: type });
     }
 
@@ -429,7 +532,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const file = join(MEDIA, hash);
         if (!HASH.test(hash) || !existsSync(file)) return json(res, 404, { error: "not found" });
         const type = existsSync(file + ".type") ? readFileSync(file + ".type", "utf8") : "application/octet-stream";
-        sendFile(req, res, file, type, { "cache-control": "public, max-age=31536000, immutable" });
+        // An uploaded file never runs as a page on the library's address: the sandbox
+        // stops scripts if someone opens it directly (images, audio and fetches in the
+        // app don't notice it), and types the browser shouldn't open are downloaded.
+        sendFile(req, res, file, type, {
+            "cache-control": "public, max-age=31536000, immutable",
+            "x-content-type-options": "nosniff",
+            "content-security-policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
+            ...(!INLINE.test(type) && { "content-disposition": "attachment" })
+        });
         return;
     }
 
@@ -499,9 +610,11 @@ server.listen(PORT, "0.0.0.0", () => {
     const version = appVersion() || "?";
     console.log(`\nOSL node running — ${log.length} ops in the log, app version ${version}${radio ? `, radio on ${process.env.RADIO_PORT}` : ""}\n`);
     console.log(`  this laptop:  ${scheme}://localhost:${PORT}`);
-    for (const a of localAddresses()) console.log(`  phones:       ${scheme}://${a}:${PORT}`);
+    for (const a of joinAddresses(scheme)) console.log(`  phones:       ${a}`);
     console.log(`  big screen:   ${scheme}://localhost:${PORT}/#/present`);
-    console.log(`\n  Pairing code: ${PAIR_CODE}   (You → Pair this device, to present or to upload)`);
+    console.log(`\n  Pairing code: ${PAIR_CODE}   (You → Pair this device, to present or as the digitization station)`);
+    const waiting = existsSync(SUGGESTIONS) ? readFileSync(SUGGESTIONS, "utf8").split("\n").filter(Boolean).length : 0;
+    console.log(`  Suggestions:  ${waiting} in the box. Read them at /#/suggestions with the key ${suggestionsKey()}  (or data/suggestions.jsonl)`);
     if (secure) {
         console.log(`\n  Phones trust it once: AirDrop certs/rootCA.pem to the phone, or open http://<address>:${PORT + 1}/ca.pem`);
         console.log("  then iPhone: Settings → Profile Downloaded → Install, and General → About → Certificate Trust Settings → on.");

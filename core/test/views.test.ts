@@ -84,3 +84,88 @@ test("a hidden detail falls back to what was there before", () => {
         { id: "s:1", user: "s", timestamp: "2026-10-05T12:00:00Z", type: "hide", target: "d-c:90" } as Op];
     assert.equal(view(ops, "d-a", ["s"]).documents["d-a:1"].properties.year, "1961");
 });
+
+// who may edit a document's details: the uploader (d-a) decides
+test("details: open to everyone until the uploader says otherwise", () => {
+    const v = view([...all, describe("d-b:80", "d-b", "2026-10-05T10:00:00Z", "year", "1961")]);
+    assert.equal(v.documents["d-a:1"].properties.year, "1961");
+});
+
+test("details: once the uploader keeps them, others' later edits are ignored, earlier ones stand", () => {
+    const v = view([...all,
+        describe("d-b:80", "d-b", "2026-10-05T10:00:00Z", "year", "1961"),
+        describe("d-a:80", "d-a", "2026-10-05T11:00:00Z", "editors", "owner"),
+        describe("d-b:81", "d-b", "2026-10-05T12:00:00Z", "year", "1999"),
+        describe("d-a:81", "d-a", "2026-10-05T13:00:00Z", "description", "line one\nline two")]);
+    const p = v.documents["d-a:1"].properties;
+    assert.equal(p.year, "1961");
+    assert.equal(p.description, "line one\nline two");
+    assert.equal(v.feed.some(e => e.kind === "describe" && e.op.id === "d-b:81"), false);
+});
+
+test("details: only the uploader or a steward may change who can edit", () => {
+    const grab = describe("d-b:80", "d-b", "2026-10-05T11:00:00Z", "editors", "owner");
+    assert.equal(view([...all, grab]).documents["d-a:1"].properties.editors, undefined);
+    assert.equal(view([...all, grab], "d-a", ["d-b"]).documents["d-a:1"].properties.editors, "owner");
+});
+
+test("details: chosen people may edit, others may not; the uploader can open it up again", () => {
+    const v = view([...all,
+        describe("d-a:80", "d-a", "2026-10-05T11:00:00Z", "editors", "people:d-c"),
+        describe("d-b:80", "d-b", "2026-10-05T12:00:00Z", "year", "1999"),
+        describe("d-c:80", "d-c", "2026-10-05T12:00:01Z", "author", "Ama"),
+        describe("d-a:81", "d-a", "2026-10-05T13:00:00Z", "editors", "everyone"),
+        describe("d-b:81", "d-b", "2026-10-05T14:00:00Z", "subtitle", "Now open")]);
+    const p = v.documents["d-a:1"].properties;
+    assert.equal(p.year, undefined);
+    assert.equal(p.author, "Ama");
+    assert.equal(p.subtitle, "Now open");
+});
+
+test("details: a kept document still takes its first thumbnail from anyone, but not a replacement", () => {
+    const hash = (c: string) => "sha256-" + c.repeat(64);
+    const v = view([...all,
+        describe("d-a:80", "d-a", "2026-10-05T11:00:00Z", "editors", "owner"),
+        describe("d-b:80", "d-b", "2026-10-05T12:00:00Z", "thumbnail", hash("b")),
+        describe("d-c:80", "d-c", "2026-10-05T12:00:01Z", "thumbnail", hash("c"))]);
+    assert.equal(v.documents["d-a:1"].properties.thumbnail, hash("b"));
+});
+
+test("details: a malformed who-can-edit is ignored", () => {
+    const v = view([...all, describe("d-a:80", "d-a", "2026-10-05T11:00:00Z", "editors", "nobody?")]);
+    assert.equal(v.documents["d-a:1"].properties.editors, undefined);
+});
+
+// replies
+const note = (id: string, user: string, timestamp: string, body: string, replyTo?: string, access = "public") =>
+    ({ id, user, timestamp, type: "annotation", target: "d-a:1", body, access, ...(replyTo && { replyTo }) }) as Op;
+
+test("replies sit under the note they answer, oldest first at each level", () => {
+    const v = view([...all,
+        note("d-b:70", "d-b", "2026-10-05T10:00:00Z", "Question?"),
+        note("d-c:70", "d-c", "2026-10-05T10:05:00Z", "Answer", "d-b:70"),
+        note("d-a:70", "d-a", "2026-10-05T10:06:00Z", "Unrelated"),
+        note("d-b:71", "d-b", "2026-10-05T10:07:00Z", "Thanks", "d-c:70"),
+        note("d-a:71", "d-a", "2026-10-05T10:08:00Z", "Another answer", "d-b:70")]);
+    const t = v.threads["d-a:1"].filter(a => a.op.id.endsWith(":70") || a.op.id.endsWith(":71"));
+    assert.deepEqual(t.map(a => [a.op.body, a.depth]),
+        [["Question?", 0], ["Answer", 1], ["Thanks", 2], ["Another answer", 1], ["Unrelated", 0]]);
+    assert.equal(t[1].parent?.id, "d-b:70");
+});
+
+test("a reply to a hidden or someone else's private note stands on its own", () => {
+    const v = view([...all,
+        note("d-b:70", "d-b", "2026-10-05T10:00:00Z", "secret", undefined, "private"),
+        note("d-c:70", "d-c", "2026-10-05T10:05:00Z", "reply to secret", "d-b:70"),
+        note("d-c:71", "d-c", "2026-10-05T10:06:00Z", "reply to nothing", "d-x:1")], "d-a");
+    const t = v.threads["d-a:1"];
+    assert.equal(t.some(a => a.op.body === "secret"), false);
+    assert.deepEqual(t.filter(a => a.op.body.startsWith("reply")).map(a => [a.depth, a.parent]), [[0, null], [0, null]]);
+});
+
+test("a loop of replies doesn't hang or lose notes", () => {
+    const v = view([...all,
+        note("d-b:70", "d-b", "2026-10-05T10:00:00Z", "one", "d-c:70"),
+        note("d-c:70", "d-c", "2026-10-05T10:05:00Z", "two", "d-b:70")]);
+    assert.equal(v.threads["d-a:1"].filter(a => a.op.body === "one" || a.op.body === "two").length, 2);
+});

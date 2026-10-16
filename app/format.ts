@@ -42,12 +42,28 @@ export function listPeople(users: string[], names: Record<string, string>): stri
     return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
-export function fileKind(fileType: string): "image" | "audio" | "video" | "text" | "pdf" | "link" | "file" {
+// what's attached, in words: for the gallery's format filter and its cards
+export const FORMATS: [string, string][] = [
+    ["pdf", "PDF"], ["epub", "EPUB"], ["image", "Image"], ["audio", "Audio"], ["video", "Video"],
+    ["text", "Text file"], ["link", "Link"], ["file", "Other file"], ["none", "Description only"]
+];
+
+export function formatOf(fileType: string): string {
+    return fileType === "text" ? "none" : fileKind(fileType);   // "text" alone means nothing is attached
+}
+
+export function formatLabel(fileType: string): string {
+    const f = formatOf(fileType);
+    return FORMATS.find(([k]) => k === f)?.[1] ?? "";
+}
+
+export function fileKind(fileType: string): "image" | "audio" | "video" | "text" | "pdf" | "epub" | "link" | "file" {
     if (fileType.startsWith("image/")) return "image";
     if (fileType.startsWith("audio/")) return "audio";
     if (fileType.startsWith("video/")) return "video";
     if (fileType.startsWith("text")) return "text";
     if (fileType === "application/pdf") return "pdf";
+    if (fileType === "application/epub+zip") return "epub";
     if (fileType === "link") return "link";
     return "file";
 }

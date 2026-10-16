@@ -1,7 +1,8 @@
 // Fills firmware/data/ for a drop point's flash (pio run -e droppoint-... -t uploadfs):
 //   www/  the app, exactly as the library serves it (run after a build: npm run build:firmware)
 //   tls/  cert.pem + key.pem, only when the firmware uses https (LIBRARY_HTTPS 1 in config.h)
-// Library files (library/files) and source maps stay out: the flash is small.
+// Library files (library/files), pdf.js (dist/vendor) and source maps stay out: the flash
+// is small. PDFs live at the library, and a phone that carried one carried pdf.js with it.
 //
 // The drop point must carry the same build as the Pi (README, W-D10): build once, then
 // copy this to the drop point and start the Pi from the same dist/ (node dist-node/server.mjs),
@@ -16,7 +17,7 @@ const https = /#define\s+LIBRARY_HTTPS\s+1\b/.test(config);
 rmSync(out, { recursive: true, force: true });
 cpSync("dist", join(out, "www"), {
     recursive: true,
-    filter: src => !src.startsWith(join("dist", "library")) && !src.endsWith(".map")
+    filter: src => !src.startsWith(join("dist", "library")) && !src.startsWith(join("dist", "vendor")) && !src.endsWith(".map")
 });
 
 if (https) {

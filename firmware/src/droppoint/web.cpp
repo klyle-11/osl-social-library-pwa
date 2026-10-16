@@ -87,6 +87,7 @@ class ChunkReply : public osl::Reply {
         httpd_resp_set_type(req_, type);
         httpd_resp_set_hdr(req_, "Cache-Control", "no-store");
     }
+    using osl::Reply::write;  // keep write(const char*) visible next to the override
     void write(const char* s, size_t n) override {
         while (n) {
             size_t take = n < sizeof(buf_) - len_ ? n : sizeof(buf_) - len_;

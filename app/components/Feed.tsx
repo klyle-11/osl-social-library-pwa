@@ -20,7 +20,7 @@ export function Feed() {
 function FeedItem({ entry }: { entry: FeedEntry }) {
     const v = views.value;
     const me = viewer.value;
-    const who = (user: string) => displayName(user, v.names, me);
+    const who = (user: string) => <span class="mark">{displayName(user, v.names, me)}</span>;
     const docLink = (id: string) => (
         <a class="feed__document" href={href({ view: "document", id })}>{v.documents[id]?.properties.title ?? "a document"}</a>
     );
@@ -35,7 +35,8 @@ function FeedItem({ entry }: { entry: FeedEntry }) {
             break;
         case "annotation":
             body = <>
-                {entry.op.access === "anonymous" ? "Someone" : who(entry.op.user)} on {docLink(entry.documentId)}:
+                {entry.op.access === "anonymous" ? "Someone" : who(entry.op.user)}
+                {entry.op.replyTo ? " replied to a note" : ""} on {docLink(entry.documentId)}:
                 <blockquote class="feed__quote">{entry.op.body}</blockquote>
             </>;
             break;

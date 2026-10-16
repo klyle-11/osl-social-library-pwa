@@ -2,9 +2,13 @@ import { useEffect, useState } from "preact/hooks";
 import type { LibraryDocument } from "../../core/types";
 import { fileUrl } from "../format";
 import { useImageSrc } from "./Thumbnail";
+import { PdfReader } from "./PdfReader";
+import { EpubReader } from "./EpubReader";
+import { useThumbnailBackfill } from "./reader";
+import { videoThumbnail } from "../thumbnails";
 
-// Shows the document itself, by kind. Everything is a plain browser element
-// (img, audio, video, iframe) so it keeps working offline once carried.
+// Shows the document itself, by kind. Mostly plain browser elements (img, audio,
+// video) so it keeps working offline once carried; PDFs and EPUBs get a reader.
 export function DocumentViewer({ doc }: { doc: LibraryDocument }) {
     const url = fileUrl(doc);
     const image = useImageSrc(doc);
@@ -20,22 +24,22 @@ export function DocumentViewer({ doc }: { doc: LibraryDocument }) {
     }
     if (image) return <div class="document-viewer document-viewer--image"><img class="document-viewer__image" src={image} alt={doc.properties.alt ?? ""} /></div>;
     if (!url) return null;
-    if (t.startsWith("text/")) return <TextViewer url={url} />;
+    // plain text, markdown, csv… shown as text; a web page someone uploaded is only a download
+    if (t.startsWith("text/") && t !== "text/html") return <TextViewer url={url} />;
     if (t.startsWith("audio/")) return <div class="document-viewer document-viewer--audio"><audio class="document-viewer__audio" src={url} controls preload="metadata" /></div>;
-    if (t.startsWith("video/")) return <div class="document-viewer document-viewer--video"><video class="document-viewer__video" src={url} controls preload="metadata" playsInline /></div>;
-    if (t === "application/pdf") {
-        return (
-            <div class="document-viewer document-viewer--pdf">
-                <iframe class="document-viewer__frame" src={url} title={doc.properties.title} />
-                <a class="document-viewer__open" href={url} target="_blank" rel="noopener">Open full screen</a>
-            </div>
-        );
-    }
+    if (t.startsWith("video/")) return <VideoViewer key={url} url={url} docId={doc.id} />;
+    if (t === "application/pdf") return <PdfReader key={url} url={url} docId={doc.id} />;
+    if (t === "application/epub+zip") return <EpubReader key={url} url={url} docId={doc.id} />;
     return (
         <div class="document-viewer document-viewer--file">
             <a class="document-viewer__open" href={url} download>Download file</a>
         </div>
     );
+}
+
+function VideoViewer({ url, docId }: { url: string, docId: string }) {
+    useThumbnailBackfill(docId, true, () => videoThumbnail(new URL(url, document.baseURI).href));
+    return <div class="document-viewer document-viewer--video"><video class="document-viewer__video" src={url} controls preload="metadata" playsInline /></div>;
 }
 
 function TextViewer({ url }: { url: string }) {

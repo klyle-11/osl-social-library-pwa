@@ -11,7 +11,8 @@ export function Collections() {
     const [name, setName] = useState("");
     const all = v.collectionOrder.map(id => v.collections[id]);
     const mine = all.filter(c => c.owner === me);
-    const others = all.filter(c => c.owner !== me && c.documentIds.length > 0);
+    // everyone's, the moment they're named: an emptied Kept is the only one left out
+    const others = all.filter(c => c.owner !== me && (c.documentIds.length > 0 || (c.name !== null && !c.id.endsWith("/kept"))));
 
     return (
         <section class="collections">
@@ -52,8 +53,8 @@ export function Collections() {
                 {list.map(c => (
                     <li class="collections__item" key={c.id}>
                         <a class="collections__link" href={href({ view: "collection", id: c.id })}>
-                            <span class="collections__name">{c.name ?? "Untitled collection"}</span>
-                            <span class="collections__meta"> · {c.documentIds.length} · by {displayName(c.owner, v.names, me)}</span>
+                            <span class="collections__name mark">{c.name ?? "Untitled collection"}</span>
+                            <span class="collections__meta"> · {c.documentIds.length || "empty so far"} · by <span class="mark">{displayName(c.owner, v.names, me)}</span></span>
                         </a>
                     </li>
                 ))}

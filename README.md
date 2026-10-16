@@ -20,15 +20,22 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Feature | State |
 |---|---|
 | Gallery front page, shared header with search and kind filter | Works |
+| Gallery sorting (newest/oldest added, title, author by surname, who added it; each both ways, remembered per device), format filter, search by every word across details, uploader, format, collections and notes | Works in a test browser |
+| Gallery thumbnails: a PDF's first page, an EPUB's cover, a video frame, a scan made small; made by the device that adds it, or the first time it's opened at the library | Works in a test browser |
+| Everyone's collections, as soon as they're named; each document lists the collections it's in | Works in a test browser |
 | Drop points page on the Pi (Sync → Drop points): the library's radio, and every drop point heard, connected or not heard since, with signal both ways | Rehearsed (`npm run rehearse:radio`); needs the boards |
 | Themes: Paper (`#fffffc`, the default), Selenized light, dark and black, and Maroon; chosen per device on You → Appearance | Works |
 | Reader: document on the left; details, presence and notes on the right (stacked on phones) | Works |
 | Whole-item notes, appearing on other devices within about two seconds | Works |
-| Details (metadata) filled in or corrected by anyone, latest wins per field | Works |
+| Details (metadata) filled in or corrected, latest wins per field. The uploader chooses who may, any time: everyone (the default), only them, or people they pick; stewards always may. Enforced on every device; edits made before a change stand | Works in a test browser |
+| Line breaks in descriptions and notes show as written | Works in a test browser |
 | Presence: "3 online", "Rosa is also viewing this document" | Works |
 | Big screen (`#/present`): document, join QR code, who is here, notes as they arrive | Works |
 | Pairing code for a presenter and for one digitization station | Works |
-| Station upload of whole files (image, PDF, audio, video), streamed and hashed | Works |
+| Anyone uploads any file from Add, no pairing: streamed to the library whole and hashed, up to 2 GB (`OSL_MAX_UPLOAD`). Phone photos are still shrunk and kept on the phone until they sync, so they work at a drop point; the paired station's photos go up at full size | Works in a test browser |
+| Uploaded files can't run as pages on the library's address: served sandboxed, and anything but images, audio, video, PDF, EPUB and plain text downloads instead of opening | Works in a test browser |
+| PDF reader (pdf.js 6.3, loaded only when a PDF is opened): pages drawn as you scroll, go to page, zoom, full screen, back where you left off | Works in a test browser; check on real phones |
+| EPUB reader (no library): chapters, contents, in-book links, text size, the app's theme, back where you left off; scripts never run; DRM books refused with a message | Works in a test browser; check on real phones |
 | Audio and video playback with seeking (Range requests) | Works in a test browser; check on real phones |
 | Sync screen: waiting to send, pause, sync now | Works |
 | Storage in IndexedDB; save and load your work as a file | Works |
@@ -68,7 +75,7 @@ The node prints its addresses and a **pairing code**:
 
 **To present:** on the facilitator's device open You → Pair this device, enter the code, choose Presenter. Open a document and choose "Show on the screen". Open `#/present` on whatever is plugged into the projector.
 
-**To upload from the digitization station:** pair as Digitization station, then use Add. Only one station is paired at a time; pairing another replaces it.
+**To upload:** anyone uses Add, on the library's Wi-Fi (a drop point takes photos only). Pairing as Digitization station only changes photos: they go up at full size instead of shrunk. Only one station is paired at a time; pairing another replaces it.
 
 **To add documents by hand:** drop files in `library/files/`, run `npm run catalog`, and edit the new entries in `library/documents.json`.
 
@@ -81,6 +88,14 @@ It runs on ARM as it is: the node uses only Node's built-in modules.
 1. Use 64-bit Raspberry Pi OS and Node 20 or newer (`node -v`).
 2. Clone the repo on the Pi and run `npm install` **there**. Do not copy `node_modules` from the Mac; the build tools in it are per-platform.
 3. `npm start`, then open `http://localhost:8080/#/present` in the Pi's browser for the HDMI screen.
+4. **Give it the name `osl.local`** (once). Phones then join at `http://osl.local`, no numbers or port. The Pi announces its own name on the network, so renaming it is enough; port 80 lets the address leave out `:8080`:
+   ```sh
+   sudo hostnamectl set-hostname osl
+   sudo sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tosl/' /etc/hosts
+   echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/90-osl-port80.conf
+   sudo sysctl --system
+   ```
+   then start the node with `PORT=80 npm start`. It prints `http://osl.local` first, and the big screen's join code shows it. iPhones, Macs, Windows and Android 12 or newer find `.local` names; an older Android needs the number it prints below. Phones keep their data per address, so pick the address before people start using it. A drop point answers `osl.local` too (`LIBRARY_NAME`, `LIBRARY_PORT` 80 in `firmware/include/config.h`).
 
 Not done yet for the Pi: starting on boot, and the Pi's own Wi-Fi network. Both belong to Gate three.
 

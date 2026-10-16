@@ -12,7 +12,7 @@ const SYNC_TEXT = {
 };
 
 const LINKS: [Route["view"], string][] = [
-    ["gallery", "Gallery"], ["activity", "Activity"], ["collections", "Collections"], ["add", "Add"]
+    ["gallery", "Gallery"], ["activity", "Activity"], ["collections", "Collections"], ["add", "Add"], ["suggest", "Suggest"]
 ];
 
 // The same header on every page: where you are, the gallery's controls, who is

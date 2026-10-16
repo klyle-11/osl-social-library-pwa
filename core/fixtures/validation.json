@@ -466,5 +466,111 @@
    2
   ],
   "valid": false
+ },
+ {
+  "case": "document with a thumbnail",
+  "op": {
+   "id": "a:40",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "application/pdf",
+   "hash": "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "properties": {
+    "title": "A PDF",
+    "author": "",
+    "type": "book",
+    "thumbnail": "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+   }
+  },
+  "valid": true
+ },
+ {
+  "case": "thumbnail that isn't a string",
+  "op": {
+   "id": "a:41",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "application/pdf",
+   "properties": {
+    "title": "A PDF",
+    "author": "",
+    "type": "",
+    "thumbnail": 5
+   }
+  },
+  "valid": false
+ },
+ {
+  "case": "describe a thumbnail",
+  "op": {
+   "id": "a:42",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "thumbnail",
+   "value": "sha256-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "valid": true
+ },
+ {
+  "case": "describe who may edit",
+  "op": {
+   "id": "a:43",
+   "type": "describe",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "field": "editors",
+   "value": "people:d-1234,d-5678"
+  },
+  "valid": true
+ },
+ {
+  "case": "document that says who may edit",
+  "op": {
+   "id": "a:44",
+   "type": "document",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "fileType": "text",
+   "properties": {
+    "title": "Mine",
+    "author": "",
+    "type": "",
+    "editors": "owner"
+   }
+  },
+  "valid": true
+ },
+ {
+  "case": "reply to a note",
+  "op": {
+   "id": "a:45",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "Agreed",
+   "access": "public",
+   "replyTo": "b:3"
+  },
+  "valid": true
+ },
+ {
+  "case": "reply to something that isn't an id",
+  "op": {
+   "id": "a:46",
+   "type": "annotation",
+   "user": "a",
+   "timestamp": "2026-10-04T14:22:05.000Z",
+   "target": "steward:1",
+   "body": "Agreed",
+   "access": "public",
+   "replyTo": 7
+  },
+  "valid": false
  }
 ]

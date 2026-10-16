@@ -10,7 +10,7 @@ export const OP_TYPES: readonly OpType[] = [
 ];
 
 export const DESCRIBE_FIELDS: readonly DescribeField[] = [
-    "title", "subtitle", "author", "type", "year", "description", "alt"
+    "title", "subtitle", "author", "type", "year", "description", "alt", "thumbnail", "editors"
 ];
 
 export const ACCESS: readonly Access[] = ["public", "private", "anonymous"];
@@ -51,8 +51,8 @@ export function createDocument(
     return { ...base(ctx), type: "document", ...fields };
 }
 
-export function createAnnotation(ctx: OpContext, target: OpId, body: string, access: Access): Annotation {
-    return { ...base(ctx), type: "annotation", target, body: body.trim(), access };
+export function createAnnotation(ctx: OpContext, target: OpId, body: string, access: Access, replyTo?: OpId): Annotation {
+    return { ...base(ctx), type: "annotation", target, body: body.trim(), access, ...(replyTo && { replyTo }) };
 }
 
 export function createAddToCollection(ctx: OpContext, collectionId: CollectionId, documentId: OpId): AddToCollection {
@@ -119,10 +119,12 @@ function checkFields(o: Fields): string | null {
                 ?? str(pf, "year", 20, false)
                 ?? str(pf, "description", LIMITS.text, false)
                 ?? str(pf, "alt", LIMITS.text, false)
+                ?? str(pf, "thumbnail", 200, false)
+                ?? str(pf, "editors", LIMITS.text, false)
                 ?? (typeof pf.type === "string" ? null : "properties.type must be a string");
         }
         case "annotation":
-            return str(o, "target", 200) ?? str(o, "body", LIMITS.body)
+            return str(o, "target", 200) ?? str(o, "body", LIMITS.body) ?? str(o, "replyTo", 200, false)
                 ?? (ACCESS.includes(o.access as Access) ? null : "access must be public, private or anonymous");
         case "add-to-collection":
         case "remove-from-collection":
@@ -140,7 +142,7 @@ function checkFields(o: Fields): string | null {
             if (typeof o.value !== "string") return "value must be a string";
             // a title can be corrected but not emptied; any other field can be cleared
             if (o.field === "title" && o.value.trim() === "") return "title is empty";
-            const max = o.field === "description" || o.field === "alt" ? LIMITS.text : o.field === "year" ? 20 : LIMITS.title;
+            const max = o.field === "description" || o.field === "alt" || o.field === "editors" ? LIMITS.text : o.field === "year" ? 20 : LIMITS.title;
             return o.value.length > max ? `value is longer than ${max}` : null;
         }
     }

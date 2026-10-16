@@ -39,6 +39,23 @@ export const tokens = signal<Partial<Record<Role, string>>>({});
 // the gallery's controls live in the header, so they are shared state
 export const query = signal("");
 export const medium = signal("all");
+// and the gallery's own: which format, and in what order (the order is remembered on this device)
+export const format = signal("all");
+export type SortKey = "newest" | "oldest" | "title-az" | "title-za" | "author-az" | "author-za" | "uploader-az" | "uploader-za";
+export const SORTS: [SortKey, string][] = [
+    ["newest", "Newest added"], ["oldest", "Oldest added"],
+    ["title-az", "Title A–Z"], ["title-za", "Title Z–A"],
+    ["author-az", "Author A–Z"], ["author-za", "Author Z–A"],
+    ["uploader-az", "Added by A–Z"], ["uploader-za", "Added by Z–A"]
+];
+export const sortBy = signal<SortKey>((() => {
+    try {
+        const v = localStorage.getItem("osl-sort");
+        return SORTS.some(([k]) => k === v) ? v as SortKey : "newest";
+    } catch {
+        return "newest";
+    }
+})());
 
 // one line of feedback for whatever just happened (or failed)
 export const notice = signal<{ text: string, error?: boolean } | null>(null);

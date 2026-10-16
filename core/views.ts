@@ -24,7 +24,9 @@ export type CollectionView = {
 export type AnnotationView = {
     op: Annotation,
     anonymous: boolean,
-    mine: boolean
+    mine: boolean,
+    depth: number,              // 0 for a note on the document, 1 for a reply to it, …
+    parent: Annotation | null   // the note it answers, when that note is visible here
 };
 
 // who last filled in a field, so the screen can credit them
@@ -45,8 +47,9 @@ export type LibraryViews = {
     collections: Record<CollectionId, CollectionView>,
     collectionOrder: CollectionId[],                // most recently updated first
     collectionsByDocument: Record<OpId, CollectionId[]>,
-    threads: Record<OpId, AnnotationView[]>,        // oldest first, like a conversation
-    names: Record<string, string>
+    threads: Record<OpId, AnnotationView[]>,        // oldest first, like a conversation; each reply right under what it answers
+    names: Record<string, string>,
+    people: string[]
 };
 
 export const KEPT_NAME = "Kept";
@@ -67,6 +70,8 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
     // 2. names: last writer wins, per user (a user can only name themselves)
     const names: Record<string, string> = {};
     for (const op of log) if (op.type === "name-user") names[op.user] = op.name;
+    // everyone who has done anything here, most recent first: who an uploader can choose from
+    const people = [...new Set([...log].reverse().map(op => op.user))];
 
     // 3. documents
     const documents: Record<OpId, LibraryDocument> = {};
@@ -75,18 +80,27 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
 
     // 3b. details people filled in afterwards: latest wins, field by field.
     //     The document shown is a copy, so the original op is never altered.
+    //     Who may fill them in is the uploader's choice (the "editors" detail), as it
+    //     stood when the edit was made: only the uploader or a steward may change it.
     const credits: Record<OpId, Partial<Record<DescribeField, DetailCredit>>> = {};
     const describesInFeed: Describe[] = [];
     for (const op of log) {
         if (op.type !== "describe" || hidden.has(op.id)) continue;
         const doc = documents[op.target];
         if (!doc) continue;
+        const owner = op.user === doc.user || stewards.has(op.user);
+        if (op.field === "editors" ? !owner || parseEditors(op.value) === null : !mayEdit(doc, op.user, stewards)) {
+            // a document nobody has pictured yet takes its first thumbnail from whoever opens it
+            if (!(op.field === "thumbnail" && !doc.properties.thumbnail && !owner && op.value)) continue;
+        }
         const properties = { ...doc.properties };
         if (op.field === "type") properties.type = op.value as DocumentMedium;
         else if (op.field === "title" || op.field === "author") properties[op.field] = op.value;
         else if (op.value === "") delete properties[op.field];
         else properties[op.field] = op.value;
         documents[op.target] = { ...doc, properties };
+        // a thumbnail is made by the app and who-may-edit is a setting: no credit, nothing in the feed
+        if (op.field === "thumbnail" || op.field === "editors") continue;
         (credits[op.target] ??= {})[op.field] = { user: op.user, timestamp: op.timestamp };
         describesInFeed.push(op);
     }
@@ -138,12 +152,36 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
     // 5. annotation threads: private ones only for their author
     const threads: Record<OpId, AnnotationView[]> = {};
     const annotationsInFeed: Annotation[] = [];
+    const visible: Record<OpId, Annotation[]> = {};
     for (const op of log) {
         if (op.type !== "annotation" || hidden.has(op.id) || !documents[op.target]) continue;
         const mine = op.user === options.viewer;
         if (op.access === "private" && !mine) continue;
-        (threads[op.target] ??= []).push({ op, anonymous: op.access === "anonymous", mine });
+        (visible[op.target] ??= []).push(op);
         if (op.access !== "private") annotationsInFeed.push(op);
+    }
+    //    replies sit under what they answer, oldest first at every level. A reply whose
+    //    note is hidden, private to someone else, or on another document stands on its own.
+    for (const [doc, notes] of Object.entries(visible)) {
+        const here = new Map(notes.map(n => [n.id, n]));
+        const children = new Map<OpId, Annotation[]>();
+        const roots: Annotation[] = [];
+        for (const n of notes) {
+            const parent = n.replyTo && n.replyTo !== n.id ? here.get(n.replyTo) : undefined;
+            if (parent) (children.get(parent.id) ?? children.set(parent.id, []).get(parent.id)!).push(n);
+            else roots.push(n);
+        }
+        const out: AnnotationView[] = [];
+        const placed = new Set<OpId>();
+        const walk = (n: Annotation, depth: number, parent: Annotation | null) => {
+            if (placed.has(n.id)) return;   // a loop of replies can't hang the page
+            placed.add(n.id);
+            out.push({ op: n, anonymous: n.access === "anonymous", mine: n.user === options.viewer, depth, parent });
+            for (const c of children.get(n.id) ?? []) walk(c, depth + 1, n);
+        };
+        for (const r of roots) walk(r, 0, null);
+        for (const n of notes) walk(n, 0, null);   // anything only reachable through a loop
+        threads[doc] = out;
     }
 
     // 6. the feed: what happened, newest first. Chronological, no ranking.
@@ -155,5 +193,27 @@ export function buildViews(ops: Op[], options: ViewOptions): LibraryViews {
     for (const op of firstNaming.values()) feed.push({ kind: "collection", op });
     feed.sort((a, b) => compareOps(b.op, a.op));
 
-    return { documents, documentOrder, credits, feed, collections, collectionOrder, collectionsByDocument, threads, names };
+    return { documents, documentOrder, credits, feed, collections, collectionOrder, collectionsByDocument, threads, names, people };
+}
+
+export type Editors = { kind: "everyone" } | { kind: "owner" } | { kind: "people", users: string[] };
+
+// "everyone" | "owner" | "people:a,b"; null for anything else (that op is ignored)
+export function parseEditors(value: string | undefined): Editors | null {
+    if (!value || value === "everyone") return { kind: "everyone" };
+    if (value === "owner") return { kind: "owner" };
+    if (value.startsWith("people:")) return { kind: "people", users: value.slice(7).split(",").filter(Boolean) };
+    return null;
+}
+
+export function formatEditors(e: Editors): string {
+    return e.kind === "people" ? `people:${e.users.join(",")}` : e.kind;
+}
+
+// may this user change this document's details now? The uploader and stewards always may.
+export function mayEdit(doc: LibraryDocument, user: string, stewards: ReadonlySet<string> | readonly string[]): boolean {
+    const isSteward = stewards instanceof Set ? stewards.has(user) : (stewards as readonly string[]).includes(user);
+    if (user === doc.user || isSteward) return true;
+    const e = parseEditors(doc.properties.editors) ?? { kind: "everyone" };
+    return e.kind === "everyone" || (e.kind === "people" && e.users.includes(user));
 }

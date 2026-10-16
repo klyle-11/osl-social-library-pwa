@@ -76,7 +76,7 @@ Default radio settings: 915 MHz, 500 kHz bandwidth, SF9, CR 4/7, 14 dBm: about 0
 
 Phones keep their data per address: scheme, name and port. A drop point therefore answers at **exactly the address phones use for the library**, or the app there looks empty and the phone's waiting notes don't come along (README, W-D10). `include/config.h` has two ways:
 
-- **`LIBRARY_HTTPS 0` (now, before the domain).** The library is `http://LIBRARY_ADDRESS:LIBRARY_PORT`: the Pi's fixed address (a DHCP reservation on the router) and the node's port (8080). The drop point's own Wi-Fi network takes that same address, so a phone that joins it finds the app where it always does. Set both to the Pi's.
+- **`LIBRARY_HTTPS 0` (now, before the domain).** The library is `http://osl.local` (`LIBRARY_NAME`, port `LIBRARY_PORT` 80): the Pi named `osl`, running on port 80 (README, "On the Raspberry Pi"). The drop point answers the same name on its own Wi-Fi, so a phone that joins it finds the app where it always does. If the Pi runs on another port, set `LIBRARY_PORT` to match.
 - **`LIBRARY_HTTPS 1` (Gate three).** The library is `https://LIBRARY_DOMAIN`, and the drop point serves the library's certificate from flash. This part is written but not yet built or tried.
 
 The drop point also carries **the same build of the app as the Pi**. Build once (`npm run build:firmware`), start the Pi from that build, and flash the same files to the drop point. Both print the app version: they must match.
