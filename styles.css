@@ -111,6 +111,22 @@ html {
 }
 
 body { margin: 0; }
+
+/* What can be selected and copied: the documents themselves, what people wrote and who
+   wrote it when, a document's details, and the takedown and ban texts. Buttons, menus,
+   tabs and the rest of the app can't, so a long press on one doesn't start a selection. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable],
+.document-viewer__text, .textLayer, .document-viewer__image,
+.single-document__header,
+.annotation-thread__meta, .annotation-thread__body, .notes-dock__meta, .notes-dock__body,
+.feed__text, .present__note-body, .present__note-by,
+.moderate__who, .moderate__said, .moderate__meta,
+.takedown__text, .takedown__list, .takedown__contact, .banned__message, .banned__contact {
+    -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+}
+button, summary, select, [role="tab"] { -webkit-user-select: none; user-select: none; }
+
 h1, h2, h3, p, ul, ol, dl, dd, blockquote, fieldset { margin: 0; padding: 0; }
 h1, h2, h3 { font-weight: 700; letter-spacing: -0.01em; }
 ul, ol { list-style: none; }
@@ -391,8 +407,41 @@ label { display: block; }
 .reader__next { min-height: var(--tap); padding: 0 0.8rem; }
 .reader__pdf { height: 72vh; overflow: auto; padding: 8px; background: var(--media-bg); }
 .reader__pdf:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.reader__pdf-page { margin: 0 auto 8px; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
-.reader__pdf-canvas { display: block; width: 100%; height: 100%; }
+.reader__pdf-page { position: relative; margin: 0 auto 8px; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+.reader__pdf-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+/* pdf.js's text layer, from its pdf_viewer.css cut down to the text: each run of words,
+   transparent, placed and stretched over its drawing on the canvas. pdf.js sets
+   --min-font-size, --font-height, --scale-x and --rotate; PdfPage sets --scale-factor. */
+.textLayer {
+    --user-unit: 1;
+    --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+    --scale-round-x: 1px;
+    --scale-round-y: 1px;
+    --min-font-size: 1;
+    --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+    --min-font-size-inv: calc(1 / var(--min-font-size));
+    position: absolute; inset: 0; overflow: clip; z-index: 0;
+    color-scheme: only light; text-align: initial; line-height: 1;
+    letter-spacing: normal; word-spacing: normal;
+    -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none;
+    transform-origin: 0 0; caret-color: CanvasText;
+}
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
+    z-index: 1;
+    --font-height: 0;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    --scale-x: 1;
+    --rotate: 0deg;
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] { -webkit-user-select: none; user-select: none; cursor: default; }
+.textLayer ::selection { background: rgb(0 0 255 / 0.25); background: color-mix(in srgb, AccentColor, transparent 50%); color: transparent; }
+.textLayer br::selection { background: transparent; }
+/* keeps a drag past the last line from selecting the whole page */
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; -webkit-user-select: none; user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
 .reader--full {
     position: fixed; inset: 0; z-index: 50; border: 0; border-radius: 0;
     padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);

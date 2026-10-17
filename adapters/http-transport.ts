@@ -357,5 +357,9 @@ export function fileTypeOf(file: File): string {
     const ext = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
     if (ext === "epub") return "application/epub+zip";
     if (ext === "pdf") return "application/pdf";
+    // plain text by any name opens as text (and so can be read and selected), not as a download
+    if (ext === "md" || ext === "markdown") return "text/markdown";
+    if (ext === "txt" || ext === "text") return "text/plain";
+    if (ext === "csv") return "text/csv";
     return file.type || "application/octet-stream";
 }

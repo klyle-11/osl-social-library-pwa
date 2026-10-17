@@ -140,10 +140,13 @@ export function PdfReader({ url, docId }: { url: string, docId: string }) {
 }
 
 // One page: drawn when it comes near the screen, let go when it's far away,
-// so a 500-page book doesn't hold 500 canvases.
+// so a 500-page book doesn't hold 500 canvases. Over the drawing lies the page's text,
+// invisible, where pdf.js puts it (its text layer), so the phone's own selection works:
+// press and hold, drag, copy. A scan with no text in it has nothing to select.
 function PdfPage({ pdf, n, width, height, root }: { pdf: PdfJs.PDFDocumentProxy, n: number, width: number, height: number, root: Element | null }) {
     const box = useRef<HTMLDivElement>(null);
     const canvas = useRef<HTMLCanvasElement>(null);
+    const text = useRef<HTMLDivElement>(null);
     const [near, setNear] = useState(false);
 
     useEffect(() => {
@@ -155,12 +158,13 @@ function PdfPage({ pdf, n, width, height, root }: { pdf: PdfJs.PDFDocumentProxy,
     }, [root]);
 
     useEffect(() => {
-        const c = canvas.current;
-        if (!c) return;
-        if (!near) { c.width = c.height = 0; return; }
+        const c = canvas.current, t = text.current;
+        if (!c || !t) return;
+        if (!near) { c.width = c.height = 0; t.replaceChildren(); return; }
         let task: PdfJs.RenderTask | null = null;
+        let layer: PdfJs.TextLayer | null = null;
         let live = true;
-        pdf.getPage(n).then(p => {
+        Promise.all([pdf.getPage(n), pdfjs()]).then(([p, lib]) => {
             if (!live) return;
             const base = p.getViewport({ scale: 1 });
             let scale = (width / base.width) * (window.devicePixelRatio || 1);
@@ -171,13 +175,20 @@ function PdfPage({ pdf, n, width, height, root }: { pdf: PdfJs.PDFDocumentProxy,
             c.height = Math.floor(viewport.height);
             task = p.render({ canvas: c, viewport });
             task.promise.catch(() => { /* cancelled by scrolling on */ });
+            // the text, in CSS pixels, laid exactly over the drawing
+            const css = p.getViewport({ scale: width / base.width });
+            t.replaceChildren();
+            t.style.setProperty("--scale-factor", String(css.scale));
+            layer = new lib.TextLayer({ textContentSource: p.streamTextContent(), container: t, viewport: css });
+            layer.render().catch(() => { /* cancelled by scrolling on */ });
         });
-        return () => { live = false; task?.cancel(); };
+        return () => { live = false; task?.cancel(); layer?.cancel(); };
     }, [near, width, pdf, n]);
 
     return (
         <div class="reader__pdf-page" data-page={n} ref={box} style={{ width: `${width}px`, height: `${height}px` }}>
             <canvas class="reader__pdf-canvas" ref={canvas} aria-label={`Page ${n}`} />
+            <div class="textLayer" ref={text} />
         </div>
     );
 }

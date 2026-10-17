@@ -229,6 +229,34 @@ const want = createHash('sha256').update(readFileSync(pdf)).digest('hex');
 t = await within(10000, () => existsSync(join(ROOT, 'data', 'media', want)) || readFileSync(LOG, 'utf8').includes(want));
 report('station upload: stored under its SHA-256', t !== null, t !== null ? want.slice(0, 12) : 'not found');
 
+// 10b. the browser's own selection: a PDF's words (pdf.js's text layer) and a text document can be
+// selected and copied; the app's buttons and menus can't
+{
+  const p = L.page;
+  await go(p, '#/document/steward%3A10');
+  const line = p.locator('.reader__pdf-page').first().locator('.textLayer span', { hasText: 'A device that holds' }).first();
+  await line.waitFor({ timeout: 20000 });
+  const b = await line.boundingBox();
+  await p.evaluate(() => getSelection().removeAllRanges());
+  await p.mouse.move(b.x + 1, b.y + b.height / 2); await p.mouse.down();
+  await p.mouse.move(b.x + b.width - 1, b.y + b.height / 2, { steps: 5 }); await p.mouse.up();
+  const pdfSel = await p.evaluate(() => getSelection().toString());
+  // opening the PDF also gave it a cover (a thumbnail op): let that land before the power cut counts ops
+  await within(8000, () => readFileSync(LOG, 'utf8').includes('"target":"steward:10","field":"thumbnail"'));
+  await go(p, '#/document/steward%3A1'); await p.waitForSelector('.document-viewer__text');
+  const t = await p.locator('.document-viewer__text').boundingBox();
+  await p.evaluate(() => getSelection().removeAllRanges());
+  await p.mouse.click(t.x + 20, t.y + 10, { clickCount: 3 });
+  const textSel = await p.evaluate(() => getSelection().toString());
+  await p.evaluate(() => getSelection().removeAllRanges());
+  const nav = await p.locator('.header a').first().boundingBox();
+  await p.mouse.click(nav.x + nav.width / 2, nav.y + nav.height / 2, { clickCount: 3 });
+  const navSel = await p.evaluate(() => getSelection().toString());
+  report('text can be selected in a PDF and a text document, not in the menus',
+    pdfSel.startsWith('A device that holds') && textSel.includes('We Wear the Mask') && navSel === '',
+    `PDF "${pdfSel.slice(0, 24)}…", text "${textSel.trim().slice(0, 16)}…", menu ${JSON.stringify(navSel)}`);
+}
+
 // 11. power cut mid-write: the last line of the log is cut off
 await stopNode();
 const before = logIds().length;

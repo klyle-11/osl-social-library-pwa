@@ -156,6 +156,7 @@ function style(d: Document, percent: number) {
     }
     el.textContent = `
         html { background: ${v("--bg")}; color: ${v("--text")}; font-size: ${percent}%; color-scheme: ${css.colorScheme || "light"}; }
+        html, body, body * { -webkit-user-select: text !important; user-select: text !important; }
         body { max-width: 38em; margin: 0 auto !important; padding: 1.25rem 1.25rem 3rem !important; line-height: 1.6; font-family: ${v("--serif")}; background: transparent !important; color: inherit !important; }
         a { color: ${v("--link")}; }${dark(v("--bg")) ? `
         body * { color: inherit !important; background-color: transparent !important; border-color: ${v("--line")} !important; }` : ""}

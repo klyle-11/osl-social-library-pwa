@@ -36,6 +36,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Uploaded files can't run as pages on the library's address: served sandboxed, and anything but images, audio, video, PDF, EPUB and plain text downloads instead of opening | Works in a test browser |
 | PDF reader (pdf.js 6.3, loaded only when a PDF is opened): pages drawn as you scroll, go to page, zoom, full screen, back where you left off | Works in a test browser; check on real phones |
 | EPUB reader (no library): chapters, contents, in-book links, text size, the app's theme, back where you left off; scripts never run; DRM books refused with a message | Works in a test browser; check on real phones |
+| The phone's own text selection (press and hold, drag, copy) in PDFs (pdf.js's text layer over each page; a scan without text has none), EPUBs and text files, and in notes, who wrote them and a document's details; buttons, menus and the rest of the app can't be selected | Works in a test browser; check on real phones |
 | Audio and video playback with seeking (Range requests) | Works in a test browser; check on real phones |
 | Sync screen: waiting to send, pause, sync now | Works |
 | Storage in IndexedDB; save and load your work as a file | Works |
@@ -53,7 +54,7 @@ A running demo of the workshop version: one screen presents a document, and ever
 | Drop points carry other libraries the node admin chooses, protected ones too: the password is asked at the drop point, checked against the PBKDF2 hash the library sends by radio | Rehearsed (`npm run rehearse:radio`); not yet on a board |
 | Marginalia engine, Omeka export, Kiwix/ZIM, NFC, TiddlyWiki export | Not built |
 
-Checked with 98 unit tests (core and node), the firmware's tests, `curl` against every endpoint, and `npm run rehearse`: 28 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (31 checks, with a protected library at the drop point) and `npm run rehearse:people` (36 checks: libraries, passwords, accounts, roles, private and shared collections, moderation, bans, takedowns). It has **not** been run on a real phone or on the Pi yet.
+Checked with 98 unit tests (core and node), the firmware's tests, `curl` against every endpoint, and `npm run rehearse`: 29 checks with two phones, a presenter laptop and the big screen in headless Chrome, including the node stopping, a clean start, a power cut mid-write and 30 extra devices; `npm run rehearse:radio` (31 checks, with a protected library at the drop point) and `npm run rehearse:people` (36 checks: libraries, passwords, accounts, roles, private and shared collections, moderation, bans, takedowns). It has **not** been run on a real phone or on the Pi yet.
 
 ## Run it
 
