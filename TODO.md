@@ -23,14 +23,15 @@ If a XIAO will not enter upload mode, hold its BOOT button while plugging it in.
 
 - [ ] Give the Pi a fixed address on the router (a DHCP reservation). The address is the app's origin: if it changes, every phone opens an empty app (W-D10).
 
-- [ ] `npm run rehearse` passes (28 checks, headless; on the Pi set `CHROME=/usr/bin/chromium`). It covers the notes, presence, presenter, offline, pause, node-restart, clean-start and ten-devices items below without real devices; do them for real anyway, since what it can't see is Safari, Wi-Fi and people.
+- [ ] `npm run rehearse` passes (31 checks, headless; on the Pi set `CHROME=/usr/bin/chromium`). It covers the notes, presence, presenter, offline, pause, node-restart, clean-start and ten-devices items below without real devices; do them for real anyway, since what it can't see is Safari, Wi-Fi and people.
 - [ ] `npm start`; open the big screen on the laptop or Pi.
 - [ ] iPhone (Safari) and Android (Chrome) on the same Wi-Fi: open the address, read, post a note.
 - [ ] A note from each phone appears on the other and on the big screen within three seconds.
 - [ ] "Rosa is also viewing this document" appears and disappears correctly.
 - [ ] Pair a presenter; "Show on the screen"; "Follow the screen" moves the phones.
 - [ ] Play and **seek** the sample film and sample recording on both phones.
-- [ ] Open the sample PDF on both phones (iPhone shows only the first page inline; use "Open full screen").
+- [ ] Open the sample PDF on both phones: scroll, press and hold a line to select it, copy it; pinch the PDF bigger and smaller.
+- [ ] Pinch anywhere but a document (header, gallery, notes): nothing zooms. Pinch a photo, a text file and an EPUB: the photo zooms, the type grows. Double-tap doesn't zoom either. iPhones ignore the page's no-zoom setting, so this is the check that matters there.
 - [ ] Pair a laptop as the digitization station and upload a real scan, a real audio file and a real video.
 - [ ] Turn the phone's Wi-Fi off, post a note, turn it on: the Sync screen shows it waiting, then sent.
 - [ ] Stop the node for a minute while phones are open; start it; nothing is lost or doubled.
@@ -91,6 +92,7 @@ Design: [docs/libraries-and-accounts.md](docs/libraries-and-accounts.md). Rehear
 - [ ] NFC tag for first pickup; redeem roles inside the installed app.
 - [ ] Marginalia engine for passage anchors: **put off**. Questions M1–M8 and what was measured are in [docs/marginalia-engine-decisions.md](docs/marginalia-engine-decisions.md).
 - [ ] TiddlyWiki export as the takeaway file.
+- [ ] Chrome logs "Blocked script execution" for each tap inside an EPUB chapter (its frame runs no scripts). Harmless, and there before pinching was added; find what asks to run a script.
 - [ ] Rewrite it yourself: [docs/workshop-write-it-yourself.md](docs/workshop-write-it-yourself.md).
 
 ---

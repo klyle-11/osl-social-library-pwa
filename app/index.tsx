@@ -15,6 +15,7 @@ import { thumbnailUrl } from "./components/Thumbnail";
 import { startCarrying, startSync } from "./sync";
 import { startTheme } from "./theme";
 import { startPlayer } from "./player";
+import { noPageZoom } from "./pinch";
 import { views } from "./state";
 import { MAIN, libraryId, storageName } from "./library";
 import { keptDirectory, startDirectory } from "./people";
@@ -75,6 +76,9 @@ async function boot() {
         const reasons = [...new Set(refused.map(r => r.reason))];
         tell(`The library didn't take ${refused.length === 1 ? "that" : `${refused.length} of those`}: ${reasons.join(" ")}`, true);
     };
+
+    // the page never zooms on a phone (documents do, with two fingers: pinch.ts)
+    noPageZoom();
 
     // Preact renders beside what's already in the container, so the "Opening the library…"
     // placeholder from index.html goes first

@@ -257,6 +257,42 @@ report('station upload: stored under its SHA-256', t !== null, t !== null ? want
     `PDF "${pdfSel.slice(0, 24)}…", text "${textSel.trim().slice(0, 16)}…", menu ${JSON.stringify(navSel)}`);
 }
 
+// 10c. pinching: the page itself never zooms on a phone, so the header and notes stay in view;
+// two fingers on a PDF zoom the PDF (and a trackpad's pinch, ctrl + wheel to the browser, on a laptop)
+{
+  const p = B.page;
+  const cdp = await B.ctx.newCDPSession(p);
+  await go(p, '#/document/steward%3A10');
+  await p.locator('.textLayer span').first().waitFor({ timeout: 20000 });
+  await cdp.send('Input.synthesizePinchGesture', { x: 200, y: 60, scaleFactor: 2.5, relativeSpeed: 800, gestureSourceType: 'touch' });
+  await p.waitForTimeout(300);
+  const pageScale = await p.evaluate(() => visualViewport.scale);
+  const r = await p.locator('.reader__pdf').boundingBox();
+  const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+  const fingers = (d) => [{ x: cx - d / 2, y: cy, id: 0 }, { x: cx + d / 2, y: cy, id: 1 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(80) });
+  for (let i = 1; i <= 10; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(80 + 12 * i) }); await p.waitForTimeout(16); }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await p.waitForTimeout(500);
+  const zoomed = await p.textContent('.reader__button[aria-label="Fit width"]');
+  const after = await p.evaluate(() => visualViewport.scale);
+  report('phone: a pinch doesn\'t zoom the page; two fingers on a PDF zoom the PDF', pageScale === 1 && after === 1 && zoomed === '250%', `page ${pageScale}, ${after}; PDF ${zoomed}`);
+  await p.click('.reader__button[aria-label="Fit width"]');
+
+  const l = L.page;
+  await go(l, '#/document/steward%3A10');
+  await l.locator('.textLayer span').first().waitFor({ timeout: 20000 });
+  const lb = await l.locator('.reader__pdf').boundingBox();
+  await l.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2);
+  await l.keyboard.down('Control');
+  for (let i = 0; i < 4; i++) { await l.mouse.wheel(0, -25); await l.waitForTimeout(20); }
+  await l.keyboard.up('Control');
+  await l.waitForTimeout(500);
+  const trackpad = await l.textContent('.reader__button[aria-label="Fit width"]');
+  report('laptop: a trackpad pinch on a PDF zooms the PDF', trackpad !== '100%', trackpad);
+  await l.click('.reader__button[aria-label="Fit width"]');
+}
+
 // 11. power cut mid-write: the last line of the log is cut off
 await stopNode();
 const before = logIds().length;

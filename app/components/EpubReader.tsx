@@ -3,8 +3,9 @@ import { Epub } from "../../adapters/epub";
 import { loadPlace, ReaderBar, savePlace, useFullScreen, useThumbnailBackfill } from "./reader";
 import { imageThumbnail } from "../thumbnails";
 import { theme } from "../theme";
+import { noPageZoom, onPinch } from "../pinch";
 
-const SIZES = [85, 100, 115, 130, 150, 175];
+const SIZES = [85, 100, 115, 130, 150, 175, 200, 250];
 
 // Reads an EPUB in the page: one chapter at a time in a frame that runs no
 // scripts, styled with the app's theme, and back where you left off next time.
@@ -84,6 +85,27 @@ export function EpubReader({ url, docId }: { url: string, docId: string }) {
         const d = f?.contentDocument, w = f?.contentWindow;
         if (!d || !w) return;
         style(d, SIZES[now.current.size]);
+        // two fingers change the type size, as A− and A+ do, and it snaps to their nearest step when they lift
+        noPageZoom(d);
+        let at = 0, pinching = false;
+        const preview = (percent: number) => {
+            const s = d.scrollingElement ?? d.documentElement;
+            if (!pinching) { pinching = true; at = s.scrollTop / Math.max(1, s.scrollHeight - s.clientHeight); }
+            style(d, percent);
+            w.scrollTo(0, at * (s.scrollHeight - s.clientHeight));
+        };
+        const percent = (scale: number) => Math.min(SIZES[SIZES.length - 1], Math.max(SIZES[0], SIZES[now.current.size] * scale));
+        onPinch(d, {
+            move: scale => preview(percent(scale)),
+            end: scale => {
+                const p = percent(scale);
+                const i = SIZES.reduce((best, v, j) => Math.abs(v - p) < Math.abs(SIZES[best] - p) ? j : best, 0);
+                preview(SIZES[i]);
+                pinching = false;
+                setSize(i);
+                savePlace(docId, { chapter: now.current.chapter, fraction: at, size: i });
+            },
+        });
         d.addEventListener("click", e => {
             const a = (e.target as Element).closest?.("a[href]");
             if (!a) return;
@@ -156,6 +178,7 @@ function style(d: Document, percent: number) {
     }
     el.textContent = `
         html { background: ${v("--bg")}; color: ${v("--text")}; font-size: ${percent}%; color-scheme: ${css.colorScheme || "light"}; }
+        html { touch-action: pan-x pan-y; }
         html, body, body * { -webkit-user-select: text !important; user-select: text !important; }
         body { max-width: 38em; margin: 0 auto !important; padding: 1.25rem 1.25rem 3rem !important; line-height: 1.6; font-family: ${v("--serif")}; background: transparent !important; color: inherit !important; }
         a { color: ${v("--link")}; }${dark(v("--bg")) ? `

@@ -4,7 +4,8 @@ import { nodeRole, useLibrary, useTransport, views } from "../state";
 
 // What the PDF and EPUB readers share: where you were, the toolbar, and full screen.
 
-export interface Place { chapter: number, fraction: number, size?: number, page?: number, zoom?: number }
+// a PDF's zoom is scale (1 = as wide as the reader); zoom was the step of its buttons, before pinching
+export interface Place { chapter: number, fraction: number, size?: number, page?: number, scale?: number, zoom?: number }
 
 // kept on this device only: where someone stopped reading isn't anyone else's business
 export function loadPlace(docId: string): Place | null {

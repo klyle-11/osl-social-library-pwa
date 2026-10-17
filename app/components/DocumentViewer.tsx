@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { LibraryDocument } from "../../core/types";
 import { fileUrl } from "../format";
 import { useImageSrc } from "./Thumbnail";
@@ -8,6 +8,7 @@ import { useThumbnailBackfill } from "./reader";
 import { videoThumbnail } from "../thumbnails";
 import { AudioButtons } from "./AudioBar";
 import { clock, duration, nowPlaying, position } from "../player";
+import { onPinch, usePinchZoom } from "../pinch";
 
 // Shows the document itself, by kind. Mostly plain browser elements (img, audio,
 // video) so it keeps working offline once carried; PDFs and EPUBs get a reader.
@@ -24,7 +25,7 @@ export function DocumentViewer({ doc }: { doc: LibraryDocument }) {
             </div>
         );
     }
-    if (image) return <div class="document-viewer document-viewer--image"><img class="document-viewer__image" src={image} alt={doc.properties.alt ?? ""} /></div>;
+    if (image) return <ImageViewer key={image} src={image} alt={doc.properties.alt ?? ""} />;
     if (!url) return null;
     // plain text, markdown, csv… shown as text; a web page someone uploaded is only a download
     if (t.startsWith("text/") && t !== "text/html") return <TextViewer url={url} />;
@@ -59,9 +60,60 @@ function VideoViewer({ url, docId }: { url: string, docId: string }) {
     return <div class="document-viewer document-viewer--video"><video class="document-viewer__video" src={url} controls preload="metadata" playsInline /></div>;
 }
 
+// A photo or a scan: two fingers zoom it, one moves around it once it's bigger than the box.
+function ImageViewer({ src, alt }: { src: string, alt: string }) {
+    const box = useRef<HTMLDivElement>(null);
+    const img = useRef<HTMLImageElement>(null);
+    const [zoom, setZoom] = useState(1);
+    const fitted = useRef({ width: 0, height: 0 });   // its size at zoom 1, which zooming multiplies
+    usePinchZoom({
+        scroller: box, content: img, zoom, min: 1, max: 8,
+        set: z => {
+            const i = img.current;
+            if (zoom === 1 && i) fitted.current = { width: i.clientWidth, height: i.clientHeight };
+            setZoom(z);
+        },
+        under: () => img.current,
+    });
+    const size = zoom > 1 && fitted.current.width
+        ? { width: `${fitted.current.width * zoom}px`, height: `${fitted.current.height * zoom}px`, maxWidth: "none", maxHeight: "none" }
+        : undefined;
+    return (
+        <div class={`document-viewer document-viewer--image${size ? " document-viewer--zoomed" : ""}`} ref={box}
+            style={size ? { height: `${fitted.current.height}px` } : undefined}>
+            <img class="document-viewer__image" ref={img} src={src} alt={alt} style={size} />
+        </div>
+    );
+}
+
+const TEXT_MIN = 0.6, TEXT_MAX = 3;
+
+// Plain text, markdown, csv: two fingers make the type bigger or smaller, and it rewraps.
 function TextViewer({ url }: { url: string }) {
     const [text, setText] = useState<string | null>(null);
     const [failed, setFailed] = useState(false);
+    const [size, setSize] = useState(1);
+    const box = useRef<HTMLDivElement>(null);
+    const pre = useRef<HTMLPreElement>(null);
+    const now = useRef(size);
+    now.current = size;
+    const ready = text !== null;
+    useEffect(() => {
+        const b = box.current;
+        if (!b) return;
+        let at = 0;   // how far down the text the reader was, kept while it rewraps
+        let pinching = false;
+        const apply = (s: number) => {
+            if (!pinching) { pinching = true; at = b.scrollTop / Math.max(1, b.scrollHeight - b.clientHeight); }
+            pre.current?.style.setProperty("--text-zoom", String(s));
+            b.scrollTop = at * (b.scrollHeight - b.clientHeight);
+        };
+        const fit = (s: number) => Math.min(TEXT_MAX, Math.max(TEXT_MIN, now.current * s));
+        return onPinch(b, {
+            move: s => apply(fit(s)),
+            end: s => { apply(fit(s)); pinching = false; setSize(fit(s)); },
+        });
+    }, [ready]);
     useEffect(() => {
         let live = true;
         fetch(url)
@@ -72,5 +124,9 @@ function TextViewer({ url }: { url: string }) {
     }, [url]);
     if (failed) return <p class="document-viewer document-viewer--unavailable">Not available offline. Keep it next time you're connected to carry it with you.</p>;
     if (text === null) return <p class="document-viewer document-viewer--loading">Loading…</p>;
-    return <div class="document-viewer document-viewer--text"><pre class="document-viewer__text">{text}</pre></div>;
+    return (
+        <div class="document-viewer document-viewer--text" ref={box}>
+            <pre class="document-viewer__text" ref={pre} style={{ "--text-zoom": String(size) }}>{text}</pre>
+        </div>
+    );
 }
